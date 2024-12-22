@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-#!/usr/bin/env python
 import hashlib
 import json
 import platform as plat
@@ -9,8 +8,6 @@ import subprocess
 import sys
 import time
 import zipfile
-from argparse import Namespace
-from configparser import ConfigParser
 from io import BytesIO
 from os import path as o_path
 import banner
@@ -35,21 +32,26 @@ from api import cls, dir_has, cat, dirsize, re_folder, f_remove
 from log import LOGS, LOGE, ysuc, yecho, ywarn
 from utils import gettype, simg2img, call
 import opscrypto
-import zip2mpk
 from rich.table import Table
 from rich.console import Console
 
-LOCALDIR = os.getcwd()
-binner = o_path.join(LOCALDIR, "bin")
-setfile = o_path.join(LOCALDIR, "bin", "settings.json")
-platform = plat.machine()
-ostype = plat.system()
-if os.getenv('PREFIX'):
-    if os.getenv('PREFIX') == "/data/data/com.termux/files/usr":
-        ostype = 'Android'
-ebinner = o_path.join(binner, ostype, platform) + os.sep
-temp = o_path.join(binner, 'temp')
+# Устанавливаем директорию языка
+LANGUAGE_DIR = o_path.join(os.getcwd(), "language")
 
+# Устанавливаем начальный язык
+current_language = 'en'  # Или 'en', в зависимости от предпочтений пользователя
+
+def load_language(lang):
+    """Загружает языковые ресурсы из JSON файла."""
+    try:
+        filepath = o_path.join(LANGUAGE_DIR, f'translations_{lang}.json')
+        with open(filepath, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(f"Language file not found. Falling back to default (English).")
+        return load_language('en')  # Если файл не найден, используйте английский.
+
+translations = load_language(current_language)
 
 class json_edit:
     def __init__(self, j_f):
@@ -80,24 +82,24 @@ def rmdire(path):
     if o_path.exists(path):
         try:
             shutil.rmtree(path)
-            ysuc("Удалено успешно!")
+            ysuc(translations["remove_successful"])
         except PermissionError:
-            ywarn("Не удается удалить папку, недостаточно разрешений")
+            ywarn(translations["permission_error"])
         except Exception as e:
-            ywarn(f"Ошибка при удалении: {e}")
+            ywarn(f"{translations['error_removing']}: {e}")
 
 
 def error(exception_type, exception, traceback):
     """Обработка ошибок."""
     cls()
     table = Table()
-    version = getattr(settings, 'version', 'Неизвестна')
-    table.add_column(f'[red]Ошибка:{exception_type.__name__}[/]', justify="center")
-    table.add_row(f'[yellow]Описание:{exception}')
-    table.add_row(f'[yellow]Строки:{exception.__traceback__.tb_lineno}\tМодуль:{exception.__traceback__.tb_frame.f_globals["__name__"]}')
-    table.add_row(f'[blue]Платформа:[purple]{plat.machine()}\t[blue]Система:[purple]{plat.uname().system} {plat.uname().release}')
-    table.add_row(f'[blue]Питон:[purple]{sys.version[:6]}\t[blue]Версия программы:[purple]{version}')
-    table.add_row(f'[green]Отчет об ошибках:https://github.com/ColdWindScholar/TIK/issues')
+    version = getattr(settings, 'version', translations["unknown"])
+    table.add_column(f'[red]{translations["error"]}:{exception_type.__name__}[/]', justify="center")
+    table.add_row(f'[yellow]{translations["description"]}:{exception}')
+    table.add_row(f'[yellow]{translations["line"]}:{exception.__traceback__.tb_lineno}\t{translations["module"]}:{exception.__traceback__.tb_frame.f_globals["__name__"]}')
+    table.add_row(f'[blue]{translations["platform"]}:{plat.machine()}\t[blue]{translations["system"]}:{plat.uname().system} {plat.uname().release}')
+    table.add_row(f'[blue]{translations["python"]}:{sys.version[:6]}\t[blue]{translations["version"]}:{version}')
+    table.add_row(f'[green]{translations["issue_report"]}')
     Console().print(table)
     input()
     sys.exit(1)
@@ -112,7 +114,7 @@ def sha1(file_path):
 
 
 if not os.path.exists(ebinner):
-    raise Exception("Двоичный файл не найден\nВозможно, ваше устройство не поддерживается")
+    raise Exception(translations["binary_file_not_found"])
 
 try:
     if os.path.basename(sys.argv[0]) == f'run_new{str() if os.name == "posix" else ".exe"}':
@@ -127,7 +129,7 @@ try:
             subprocess.Popen([new])
             sys.exit()
 except Exception as e:
-    ywarn(f"Ошибка при обновлении: {e}")
+    ywarn(f"{translations['error_during_update']}: {e}")
 
 class set_utils:
     def __init__(self, path):
@@ -158,7 +160,7 @@ class upgrade:
         if not os.path.exists(temp):
             os.makedirs(temp)
         cls()
-        with Console().status(f"[blue]Тестирование новой версии...[/]"):
+        with Console().status(translations["checking_for_updates"]):
             try:
                 data = requests.get(self.update_json).json()
             except (requests.RequestException, json.JSONDecodeError):
@@ -167,25 +169,25 @@ class upgrade:
         if data:
             if data.get('version', settings.version) != settings.version:
                 print(f'\033[31m {banner.banner1} \033[0m')
-                print(f"Новая версия: {settings.version} --> {data.get('version')}")
-                print(f"Изменения:\n{data.get('log', '1. Исправление некоторых ошибок')}")
-                if input("Обновить?[1/0]") == '1':
+                print(f"{translations['new_version']} {settings.version} --> {data.get('version')}")
+                print(f"{translations['changes']}\n{data.get('log', translations['fixing_errors'])}")
+                if input(translations["upgrade_prompt"]) == '1':
                     self.download_and_update(data)
             else:
-                input("\033[0;32;40mВы используете последнюю версию! Нажмите любую кнопку для возврата!\033[0m")
+                input(translations["latest_version"])
 
     def download_and_update(self, data):
         try:
             link = data['link'][plat.system()][plat.machine()]
             if link:
-                print("Загрузка новой версии...")
+                print(translations["downloading_new_version"])
                 downloader.download([link], temp)
                 self.extract_and_install_update(link)
         except Exception:
-            input("Обновление не найдено, пожалуйста, перейдите по ссылке https://github.com/ColdWindScholar/TIK для самостоятельного обновления")
+            input(translations["update_not_found"])
 
     def extract_and_install_update(self, link):
-        print("Обновление, пожалуйста, не закрывайте программу...")
+        print(translations["updating_please_wait"])
         upgrade_pkg = os.path.join(temp, os.path.basename(link))
         extract_path = os.path.join(temp, 'update')
         rmdire(extract_path)
@@ -193,7 +195,7 @@ class upgrade:
         try:
             zipfile.ZipFile(upgrade_pkg).extractall(extract_path)
         except (zipfile.BadZipFile, Exception):
-            input("Файл обновления поврежден и не может быть обновлен")
+            input(translations["corrupted_update_file"])
             return
         
         self.update_settings(extract_path)
@@ -214,7 +216,7 @@ class upgrade:
         rmdire(os.path.join(LOCALDIR, 'bin2'))
         json_edit(setfile).write(json2)
 
-        input("После завершения обновления нажатие любой кнопки перезагрузит программу...")
+        input(translations["restart_prompt"])
         subprocess.Popen([os.path.join(LOCALDIR, f'run_new{str() if os.name == "posix" else ".exe"}')])
         sys.exit()
 
@@ -231,11 +233,11 @@ class setting:
         }
         cls()
         print(self.settings_menu())
-        op_pro = input("   Пожалуйста, сделайте выбор:")
+        op_pro = input(translations["please_make_a_choice"])
         if op_pro in actions:
             actions[op_pro]()
         else:
-            print("Ошибка ввода!")
+            print(translations["error_input"])
         self.settings1()
 
     def settings2(self):
@@ -250,17 +252,17 @@ class setting:
             '7': lambda: settings.change('autoslotsuffixing', self.get_auto_slot_suffixing())
         }
         print(self.settings_dynamic_partition_menu())
-        op_pro = input("   Пожалуйста, введите число: ")
+        op_pro = input(translations["please_enter_number"])
         if op_pro in actions:
             actions[op_pro]()
         else:
-            ywarn("Ошибка ввода!")
+            ywarn(translations["error_input"])
         self.settings2()
 
     def settings3(self):
         cls()
         print(self.settings_program_menu())
-        op_pro = input("   Пожалуйста, введите число: ")
+        op_pro = input(translations["please_enter_number"])
         actions = {
             '1': self.set_banner,
             '2': self.toggle_online,
@@ -270,127 +272,8 @@ class setting:
         if op_pro in actions:
             actions[op_pro]()
         else:
-            print("Ошибка ввода!")
+            print(translations["error_input"])
         self.settings3()
-
-    @staticmethod
-    def settings4():
-        cls()
-        print(f'\033[31m {banner.banner1} \033[0m')
-        print('\033[96m Программа для работы с образами прошивок с открытым исходным кодом\033[0m')
-        print('\033[31m---------------------------------\033[0m')
-        print(f"\033[93mРазработчик:\033[0m \033[92mColdWindScholar\033[0m")
-        print(f"\033[93mПеревод и адаптация на русский:\033[0m \033[92mRayne Kobayashi\033[0m")
-        print(f"\033[93mСсылка на проект:\033[0m \033[91mhttps://github.com/ColdWindScholar/TIK\033[0m")
-        print(f"\033[93mВерсия программы:\033[0m \033[44mАльфа версия\033[0m")
-        print(f"\033[93mПротокол с открытым исходным кодом:\033[0m \033[68mGNU General Public License v3.0 \033[0m")
-        print('\033[31m---------------------------------\033[0m')
-        print(f"\033[93mБлагодарность за поддержку:\033[0m")
-        print('\033[94mAffggh')
-        print("Yeliqin666")
-        print('YukongA')
-        print("\033[0m")
-        input('\033[31m---------------------------------\033[0m')
-
-    def __init__(self):
-        cls()
-        print(self.settings_initial_menu())
-        op_pro = input("   Пожалуйста, введите число: ")
-        if op_pro == "0":
-            return
-        try:
-            getattr(self, 'settings%s' % op_pro)()
-            self.__init__()
-        except AttributeError as e:
-            print(f"Ошибка ввода!{e}")
-            self.__init__()
-
-    @staticmethod
-    def get_brotli_compression_level() -> str:
-        """Получить уровень сжатия Brotwheel."""
-        while True:
-            brcom = input("Отрегулируйте уровень сжатия Бротли (числа от 1 до 9): ")
-            if brcom.isdigit() and 0 < int(brcom) < 10:
-                return brcom
-            print("Ошибка ввода! Попробуйте еще раз.")
-
-    @staticmethod
-    def get_dynamic_size() -> str:
-        """Выбор размера собираемого образа."""
-        return "1" if input("Размер собираемого образа: [1] Динамический [2] Оригинальный: ") == '2' else ''
-
-    @staticmethod
-    def get_pack_e2() -> str:
-        """Получить метод упаковки."""
-        return '0' if input("Собирать используя: [1]make_ext4fs [2]mke2fs+e2fsdroid: ") == '1' else '1'
-
-    @staticmethod
-    def get_pack_sparse() -> str:
-        """Получить решение по сжатию."""
-        return '1' if input("Собрать образ в sparse? [1/0]: ") == '1' else "0"
-
-    @staticmethod
-    def get_diy_image_type() -> str:
-        """Выбор типа файловой системы."""
-        return '1' if input("Выберите тип файловой системы [1] Как в оригинале [2] Выбрать (ext4<==>erofs): ") == '2' else ''
-
-    @staticmethod
-    def get_erofs_old_kernel() -> str:
-        """Поддержка старых ядер в EROFS."""
-        return '1' if input("Включить поддержку старых ядер в EROFS? [1/0]: ") == '1' else '0'
-
-    @staticmethod
-    def get_super_group() -> str:
-        """Ввод названия группы динамического раздела."""
-        while True:
-            super_group = input("Введите название группы динамического раздела (без специальных символов): ")
-            if super_group:
-                return super_group
-            print("Ошибка ввода! Попробуйте снова.")
-
-    @staticmethod
-    def get_metadata_size() -> str:
-        """Ввод максимального размера метаданных."""
-        while True:
-            metadata_size = input("Установите максимальный размер метаданных (по умолчанию 65536, минимум 512): ")
-            if metadata_size.isdigit():
-                return metadata_size
-            print("Ошибка ввода! Попробуйте снова.")
-
-    @staticmethod
-    def get_block_size() -> str:
-        """Ввод размера сектора/блока раздела."""
-        return input(f"Размер сектора/блока раздела: {settings.BLOCKSIZE}\nПожалуйста, введите: ")
-
-    @staticmethod
-    def get_sblock_size() -> str:
-        """Ввод размера сектора/блока раздела."""
-        return input(f"Размер сектора/блока раздела: {settings.SBLOCKSIZE}\nПожалуйста, введите: ")
-
-    @staticmethod
-    def get_full_super() -> str:
-        """Создавать Super образ."""
-        return '' if input("Создать Super образ? [1/0]") != '1' else '-F'
-
-    @staticmethod
-    def get_auto_slot_suffixing() -> str:
-        """Добавление A/B структуры разделов."""
-        return '' if input("Добавить A/B структуру разделов в образ? [1/0]") != '1' else '-x'
-
-    def set_banner(self):
-        """Настройка баннера на главной странице."""
-        print("Баннер на главной странице: [1] TIK5 [2] Серп и молот [3] TIK2 [4] Genshin Impact [5] DXY [6] Никакой")
-        banner_i = input("Пожалуйста, введите число: ")
-        if banner_i.isdigit() and 0 < int(banner_i) < 7:
-            settings.change('banner', banner_i)
-
-    def toggle_online(self):
-        """Включение/выключение сообщений дня."""
-        settings.change('online', 'false' if settings.online == 'true' else 'true')
-
-    def toggle_context(self):
-        """Включение/выключение исправления контекста."""
-        settings.change('context', 'false' if settings.context == 'true' else 'true')
 
     @staticmethod
     def settings_menu():
@@ -480,7 +363,7 @@ def plug_parse(js_on):
                                     print("----------" + con['text'] + "----------")
                             elif con["type"] == "filechose":
                                 file_var_name = con['set']
-                                ysuc("Пожалуйста, перетащите файл или введите путь, указанный ниже")
+                                ysuc(translations["please_drag_file"])
                                 self.gavs[file_var_name] = input(con['text'])
                             elif con["type"] == "radio":
                                 self.handle_radio(con)
@@ -489,7 +372,7 @@ def plug_parse(js_on):
                             elif con['type'] == 'checkbutton':
                                 self.handle_checkbutton(con)
                             else:
-                                print("Парсинг (анализ) не поддерживается:%s" % con['type'])
+                                print(f"{translations['unsupported_parsing']}: %s" % con['type'])
 
             except Exception as e:
                 ywarn(f"Ошибка анализа {e}")
@@ -507,19 +390,19 @@ def plug_parse(js_on):
                 print(f"[{cs}] {text}")
                 gavs[str(cs)] = value
             print("---------------------------")
-            op_in = input("Пожалуйста, введите число:")
+            op_in = input(translations["please_enter_number"])
             self.gavs[radio_var_name] = gavs.get(op_in, gavs["1"])
 
         def handle_input(self, con):
             input_var_name = con['set']
             if 'text' in con:
                 print(con['text'])
-            self.gavs[input_var_name] = input("Пожалуйста, введите: ")
+            self.gavs[input_var_name] = input(translations["please_enter_input"])
 
         def handle_checkbutton(self, con):
             b_var_name = con['set']
-            text = 'M.K.C' if 'text' not in con else con['text']
-            self.gavs[b_var_name] = 1 if input(text + "[1/0]:") == '1' else 0
+            text = translations['M.K.C'] if 'text' not in con else con['text']
+            self.gavs[b_var_name] = 1 if input(text + translations["yes_no_question"]) == '1' else 0
 
     data = parse(js_on)
     return data.gavs, data.value
@@ -547,7 +430,7 @@ class Tool:
         print(" >\033[33m Список проектов \033[0m\n")
         self.display_projects(projects)
 
-        op_pro = input("  Пожалуйста, введите число：")
+        op_pro = input(translations["please_enter_number"])
         self.process_user_input(op_pro, projects)
 
     def display_quote(self):
@@ -578,7 +461,7 @@ class Tool:
         if op_pro == '55':
             self.unpackrom()
         elif op_pro == '88':
-            url = input("Введите ссылку для скачивания:")
+            url = input(translations["input_download_url"])
             if url:
                 try:
                     downloader.download([url], LOCALDIR)
@@ -591,7 +474,7 @@ class Tool:
             self.create_new_project()
         elif op_pro == '66':
             cls()
-            ysuc("\nСпасибо за использование TI-KITCHEN5, до свидания！")
+            ysuc(translations["thank_you_use_tool"])
             sys.exit(0)
         elif op_pro == '77':
             setting()
@@ -599,25 +482,25 @@ class Tool:
             self.pro = projects[op_pro]
             self.project()
         else:
-            ywarn("  Ошибка ввода!")
-            input("Нажмите любую клавишу для продолжения")
+            ywarn(translations["error_input"])
+            input(translations["press_any_key_continue"])
         
         self.main()
 
     def delete_project(self, projects):
         """Удаляет проект."""
-        op_pro = input("  Пожалуйста, введите число проекта, который хотите удалить:")
+        op_pro = input(translations["input_project_number_to_delete"])
         op_pro = op_pro.split() if " " in op_pro else [op_pro]
         for op in op_pro:
             if op in projects.keys():
                 if input(f"  Удалить {projects[op]}? [1/0]") == '1':
                     rmdire(o_path.join(LOCALDIR, projects[op]))
                 else:
-                    ywarn("Восстановить")
+                    ywarn(translations["restore"])
 
     def create_new_project(self):
         """Создает новый проект."""
-        projec = input("Пожалуйста, введите название проекта(не на китайском языке)：")
+        projec = input(translations["input_project_name"])
         if projec:
             if os.path.exists(o_path.join(LOCALDIR, projec)):
                 projec = f'{projec}_{time.strftime("%m%d%H%M%S")}'
@@ -626,8 +509,8 @@ class Tool:
             self.pro = projec
             self.project()
         else:
-            ywarn("Ошибка ввода!")
-            input("Нажмите любую клавишу для продолжения")
+            ywarn(translations["error_input"])
+            input(translations["press_any_key_continue"])
 
     def project(self):
         """Управляет проектом."""
@@ -644,7 +527,7 @@ class Tool:
         print('\033[36m    3> Меню упаковки                     4> Меню плагинов\033[0m\n')
         print('\033[32m    5> Собрать в zip архив               6> Установка магиска (рута), удаление avb, шифрования\033[0m\n')
 
-        op_menu = input("    Пожалуйста, введите число: ")
+        op_menu = input(translations["please_enter_number"])
         self.handle_project_option(op_menu, project_dir)
 
     def handle_project_option(self, op_menu, project_dir):
@@ -663,8 +546,8 @@ class Tool:
         elif op_menu == '6':
             self.custom_rom()
         else:
-            ywarn('Ошибка ввода!')
-            input("Нажмите любую клавишу для продолжения")
+            ywarn(translations["error_input"])
+            input(translations["press_any_key_continue"])
 
         self.project()
 
@@ -676,7 +559,7 @@ class Tool:
         print('\033[33m    0> Вернуться назад                 1> Установить магиск в образ, для получения рута\033[0m\n')
         print('\033[33m    2> Удалить avb                     3> Удалить шифрование данных\033[0m\n')
 
-        op_menu = input("    Пожалуйста, введите число: ")
+        op_menu = input(translations["please_enter_number"])
         if op_menu == '0':
             return
         elif op_menu == '1':
@@ -686,9 +569,9 @@ class Tool:
         elif op_menu == '3':
             self.remove_data_encryption_from_images()
         else:
-            ywarn('Ошибка ввода!')
+            ywarn(translations["error_input"])
 
-        input("Нажмите любую клавишу для продолжения")
+        input(translations["press_any_key_continue"])
         self.custom_rom()
 
     def magisk_patch(self):
@@ -712,11 +595,11 @@ class Tool:
         print("\033[33m-------------------------------\033[0m")
         print("\033[33m    [00] Назад\033[0m\n")
 
-        op_menu = input("    Пожалуйста, введите число: ")
+        op_menu = input(translations["please_enter_number"])
         if op_menu in boots.keys():
-            mapk = input("    Пожалуйста, выберите путь для Magisk.apk:")
+            mapk = input(translations["choose_magisk_apk_path"])
             if not os.path.isfile(mapk):
-                ywarn('Ошибка ввода!')
+                ywarn(translations["input_error"])
             else:
                 patch = Magisk_patch(boots[op_menu], '', MAGISAPK=mapk)
                 patch.auto_patch()
@@ -725,7 +608,7 @@ class Tool:
             os.chdir(project)
             return
         else:
-            ywarn('Ошибка ввода!')
+            ywarn(translations["input_error"])
 
     def handle_successful_patch(self, project, boots, op_menu):
         """Обрабатывает успешное завершение патча."""
@@ -733,9 +616,9 @@ class Tool:
             out = os.path.join(project, "boot_patched.img")
             shutil.move(os.path.join(LOCALDIR, 'new-boot.img'), out)
             LOGS(f"Moved to: {out}")
-            LOGS("Установка успешно завершена")
+            LOGS(translations["installation_successful"])
         else:
-            LOGE("Установка завершилась неудачей")
+            LOGE(translations["installation_failed"])
 
     def remove_avb_from_images(self):
         """Удаляет AVB из образов в проекте."""
@@ -759,11 +642,11 @@ class Tool:
         print(f"  Проект: {os.path.basename(project)}\n")
         print('\033[33m    1> Собрать прошивку в zip архив     2> Собрать прошивку и добавить в zip архив скрипт, чтобы прошивку можно было прошить через fastboot используя ПК и через TWRP\nOFOX \n    3> Вернуться назад\033[0m\n')
 
-        chose = input("    Пожалуйста, введите число: ")
+        chose = input(translations["please_enter_number"])
         if chose == '1':
             self.prepare_for_zip()
         elif chose == '2':
-            utils.dbkxyt(os.path.join(project, 'TI_out') + os.sep, input("Прошивка создается для конкретной модели и может не работать на других"),
+            utils.dbkxyt(os.path.join(project, 'TI_out') + os.sep, input(translations["zip_creation_prompt"]),
                          binner + os.sep + 'extra_flash.zip')
         else:
             return
@@ -772,7 +655,7 @@ class Tool:
 
     def prepare_for_zip(self):
         """Готовит проект к упаковке в zip архив."""
-        print("Подготовка к упаковке...")
+        print(translations["preparing_for_zip"])
         for v in ['firmware-update', 'META-INF', 'exaid.img', 'dynamic_partitions_op_list']:
             if os.path.isdir(os.path.join(project, v)):
                 if not os.path.isdir(os.path.join(project, 'TI_out' + os.sep + v)):
@@ -787,8 +670,8 @@ class Tool:
         zipn = 0
         zips = {}
         print(" \033[31m > Список прошивок \033[0m\n")
-        ywarn("Пожалуйста, выберите zip архив с прошивкой: {LOCALDIR}！\n")
-        
+        ywarn(translations["zip_selection_prompt"])
+
         if dir_has(LOCALDIR, '.zip'):
             for zip0 in os.listdir(LOCALDIR):
                 if zip0.endswith('.zip'):
@@ -797,33 +680,33 @@ class Tool:
                         print(f"   [{zipn}]- {zip0}\n")
                         zips[zipn] = zip0
         else:
-            ywarn("Нет файлов прошивки！")
+            ywarn(translations["no_rom_files"])
 
         print("--------------------------------------------------\n")
-        zipd = input("Пожалуйста, введите число：")
+        zipd = input(translations["please_enter_number"])
         if zipd.isdigit() and int(zipd) in zips.keys():
             self.create_new_project_from_zip(zips[int(zipd)])
         else:
-            ywarn("Ошибка ввода!")
-            input("Нажмите любую клавишу для продолжения")
+            ywarn(translations["error_input"])
+            input(translations["press_any_key_continue"])
 
     def create_new_project_from_zip(self, zip_file_name):
         """Создает новый проект на основе выбранного zip файла."""
-        projec = input("Пожалуйста, введите название проекта (можно оставить пустым): ")
+        projec = input(translations["input_project_name"])
         project = f"TI_{projec}" if projec else f"TI_{os.path.basename(zip_file_name).replace('.zip', '')}"
         
-        if os.path.exists(os.path.join(LOCALDIR, project)):
+        if os.path.exists(o_path.join(LOCALDIR, project)):
             project = f"{project}_{time.strftime('%m%d%H%M%S')}"
-            ywarn(f"Проект уже существует！Называется：{project}")
+            ywarn(f"Проект уже существует! Называется: {project}")
 
-        os.makedirs(os.path.join(LOCALDIR, project))
+        os.makedirs(o_path.join(LOCALDIR, project))
         print(f"{project} создан успешно！")
         
-        with Console().status("[yellow]Распаковка...[/]"):
-            zipfile.ZipFile(os.path.abspath(zip_file_name)).extractall(os.path.join(LOCALDIR, project))
+        with Console().status(translations["unpacking"]):
+            zipfile.ZipFile(os.path.abspath(zip_file_name)).extractall(o_path.join(LOCALDIR, project))
         
-        yecho("Распакованная прошивка...")
-        autounpack(os.path.join(LOCALDIR, project))
+        yecho(translations["unpacking_successful"])
+        autounpack(o_path.join(LOCALDIR, project))
 
         self.pro = project
         self.project()
@@ -841,1139 +724,20 @@ class zip_file:
         os.chdir(dst_dir)
         relpath = str(path + file)
         if os.path.exists(relpath):
-            ywarn(f"Файл с таким именем уже существует: {file} , был автоматически переименован в {(relpath := path + utils.v_code() + file)}")
+            ywarn(f"{translations['file_already_exists']}: {file} , был автоматически переименован в {(relpath := path + utils.v_code() + file)}")
         
         with zipfile.ZipFile(relpath, 'w', compression=zipfile.ZIP_DEFLATED,
                              allowZip64=True) as zip_:
             for file in get_all_file_paths('.'):
-                print(f"Запись: {file}")
+                print(f"{translations['writing']}: {file}")
                 try:
                     zip_.write(file)
                 except Exception as e:
-                    print("Ошибка записи: {}".format(e))
+                    print(f"{translations['write_error']}: {e}")
 
         if os.path.exists(relpath):
-            print(f'Упаковка завершена: {relpath}')
+            print(f"{translations['packing_complete']}: {relpath}")
         os.chdir(local)
-
-
-def subbed(project):
-    if not os.path.exists(binner + os.sep + "subs"):
-        os.makedirs(binner + os.sep + "subs")
-    cls()
-    subn = 0
-    mysubs = {}
-    names = {}
-    print(" >\033[31mСписок плагинов \033[0m\n")
-    for sub in os.listdir(binner + os.sep + "subs"):
-        if os.path.isfile(binner + os.sep + "subs" + os.sep + sub + os.sep + "info.json"):
-            with open(binner + os.sep + "subs" + os.sep + sub + os.sep + "info.json") as l_info:
-                name = json.load(l_info)['name']
-            subn += 1
-            print(f"   [{subn}]- {name}\n")
-            mysubs[subn] = sub
-            names[subn] = name
-    print("----------------------------------------------\n")
-    print("\033[33m> [66]-Установить [77]-Удалить [0]-Вернуться назад\033[0m")
-    op_pro = input("Пожалуйста, введите число：")
-    if op_pro == '66':
-        path = input("Пожалуйста, введите путь к плагину или [перетащите]:")
-        if os.path.exists(path) and not path.endswith('.zip2'):
-            installmpk(path)
-        elif path.endswith('.zip2'):
-            installmpk(zip2mpk.main(path, os.getcwd()))
-        else:
-            ywarn(f"{path}не существует！")
-        input("Нажмите любую клавишу для продолжения")
-    elif op_pro == '77':
-        chose = input("Введите число подключаемого плагина:")
-        unmpk(mysubs[int(chose)], names[int(chose)], binner + os.sep + "subs") if int(
-            chose) in mysubs.keys() else ywarn("Ошибка в выборе цифры плагина")
-    elif op_pro == '0':
-        return
-    elif op_pro.isdigit():
-        if int(op_pro) in mysubs.keys():
-            plugin_path = os.path.join(binner, 'subs', mysubs[int(op_pro)])
-            if os.path.exists(plugin_path + os.sep + "main.sh"):
-                if os.path.exists(plugin_path + os.sep + "main.json"):
-                    gavs, value = plug_parse(
-                        os.path.join(plugin_path, "main.json"))
-                    gen = gen_sh_engine(project, gavs, value)
-                else:
-                    gen = gen_sh_engine(project)
-                call(
-                    f'busybox ash {gen} {os.path.join(plugin_path, "main.sh").replace(os.sep, "/")}')
-                f_remove(gen)
-            else:
-                ywarn(f"{mysubs[int(op_pro)]}Это плагин среды, который не может быть запущен！")
-            input("Нажмите на любую кнопку для возврата")
-    subbed(project)
-
-
-def gen_sh_engine(project, gavs=None, value=None):
-    if not os.path.exists(temp):
-        os.makedirs(temp)
-    engine = temp + os.sep + utils.v_code()
-    with open(engine, 'w', encoding='utf-8', newline='\n') as en:
-        en.write(f"export project={project.replace(os.sep, '/')}\n")
-        en.write(f'export tool_bin={ebinner.replace(os.sep, "/")}\n')
-        if gavs or value:
-            for i in value:
-                en.write(f"export {i}='{gavs[i]}'\n")
-        en.write(f'source $1\n')
-    return engine.replace(os.sep, '/')
-
-
-class installmpk:
-    def __init__(self, mpk):
-        super().__init__()
-        self.mconf = ConfigParser()
-        if not mpk:
-            ywarn("Плагин не существует")
-            return
-        if not zipfile.is_zipfile(mpk):
-            ywarn("Без плагина！")
-            input("Нажмите на любую кнопку для возврата")
-        with zipfile.ZipFile(mpk, 'r') as myfile:
-            with myfile.open('info') as info_file:
-                self.mconf.read_string(info_file.read().decode('utf-8'))
-            with myfile.open(self.mconf.get('module', 'resource'), 'r') as inner_file:
-                self.inner_zipdata = inner_file.read()
-                self.inner_filenames = zipfile.ZipFile(BytesIO(self.inner_zipdata)).namelist()
-        print('''
-         \033[36m
-        ----------------
-           Установка нового плагина
-        ----------------
-        ''')
-        print("Название плагина：" + self.mconf.get('module', 'name'))
-        print("Версия:%s\nРазработчик：%s" % (self.mconf.get('module', 'version'), (self.mconf.get('module', 'author'))))
-        print("Описание:")
-        print(self.mconf.get('module', 'describe'))
-        print("\033[0m\n")
-        if input("Установить? [1/0]") == '1':
-            self.install()
-        else:
-            yecho("Отменить установку")
-            input("Нажмите на любую кнопку для возврата")
-
-    def install(self):
-        try:
-            supports = self.mconf.get('module', 'supports').split()
-        except (Exception, BaseException):
-            supports = [sys.platform]
-        if sys.platform not in supports:
-            ywarn(f"[!]Установка не удалась: неподдерживаемая система{sys.platform}")
-            input("Нажмите на любую кнопку для возврата")
-            return False
-        for dep in self.mconf.get('module', 'depend').split():
-            if not os.path.isdir(binner + os.sep + "subs" + os.sep + dep):
-                ywarn(f"[!]Установка не удалась: зависимости не соблюдены{dep}")
-                input("Нажмите на любую кнопку для возврата")
-                return False
-        if os.path.exists(binner + os.sep + "subs" + os.sep + self.mconf.get('module', 'identifier')):
-            shutil.rmtree(binner + os.sep + "subs" + os.sep + self.mconf.get('module', 'identifier'))
-        fz = zipfile.ZipFile(BytesIO(self.inner_zipdata), 'r')
-        for file in track(self.inner_filenames, description="Установка..."):
-            try:
-                file = str(file).encode('cp437').decode('gbk')
-            except (Exception, BaseException):
-                file = str(file).encode('utf-8').decode('utf-8')
-            fz.extract(file, binner + os.sep + "subs" + os.sep + self.mconf.get('module', 'identifier'))
-        try:
-            depends = self.mconf.get('module', 'depend')
-        except (Exception, BaseException):
-            depends = ''
-        minfo = {"name": self.mconf.get('module', 'name'),
-                 "author": self.mconf.get('module', 'author'),
-                 "version": self.mconf.get('module', 'version'),
-                 "identifier": self.mconf.get('module', 'identifier'),
-                 "describe": self.mconf.get('module', 'describe'),
-                 "depend": depends}
-        with open(binner + os.sep + "subs" + os.sep + self.mconf.get('module', 'identifier') + os.sep + "info.json",
-                  'w') as f:
-            json.dump(minfo, f, indent=2)
-
-
-class unmpk:
-    def __init__(self, plug, name, moduledir):
-        self.arr = []
-        self.arr2 = []
-        if plug:
-            self.value = plug
-            self.value2 = name
-            self.moddir = moduledir
-            self.lfdep()
-            self.ask()
-        else:
-            ywarn("Пожалуйста, выберите плагин！")
-            input("Нажмите любую клавишу для продолжения")
-
-    def ask(self):
-        cls()
-        print(f"\033[31m >Удалить{self.value2} \033[0m\n")
-        if self.arr2:
-            print("\033[36mСледующие плагины будут удалены одновременно")
-            print("\n".join(self.arr2))
-            print("\033[0m\n")
-        self.unloop() if input("Удалить [1/0]") == '1' else ysuc("Отменить")
-        input("Нажмите любую клавишу для продолжения")
-
-    def lfdep(self, name=None):
-        if not name:
-            name = self.value
-        for i in [i for i in os.listdir(self.moddir) if os.path.isdir(self.moddir + os.sep + i)]:
-            with open(self.moddir + os.sep + i + os.sep + "info.json", 'r', encoding='UTF-8') as f:
-                data = json.load(f)
-                for n in data['depend'].split():
-                    if name == n:
-                        self.arr.append(i)
-                        self.arr2.append(data['name'])
-                        self.lfdep(i)
-                        break
-                self.arr = sorted(set(self.arr), key=self.arr.index)
-                self.arr2 = sorted(set(self.arr2), key=self.arr2.index)
-
-    def unloop(self):
-        for i in track(self.arr):
-            self.umpk(i)
-        self.umpk(self.value)
-
-    def umpk(self, name=None) -> None:
-        if name:
-            print(f"Удаление:{name}")
-            if os.path.exists(self.moddir + os.sep + name):
-                shutil.rmtree(self.moddir + os.sep + name)
-            ywarn(f"Не удалось выполнить удаление{name}！") if os.path.exists(self.moddir + os.sep + name) else yecho(f"Удаление{name}успешно завершено！")
-
-
-def unpack_choo(project):
-    cls()
-    os.chdir(project)
-    print(" \033[31m >Распаковка \033[0m\n")
-    filen = 0
-    files = {}
-    infos = {}
-    ywarn(f"  Пожалуйста, поместите файлы в корневой каталог: {project}！\n")
-    print(" [0]- Распаковать все файлы в автоматическом режиме (без лишних запросов)\n")
-    if dir_has(project, '.br'):
-        print("\033[33m [Br]файлы\033[0m\n")
-        for br0 in os.listdir(project):
-            if br0.endswith('.br'):
-                if os.path.isfile(os.path.abspath(br0)):
-                    filen += 1
-                    print(f"   [{filen}]- {br0}\n")
-                    files[filen] = br0
-                    infos[filen] = 'br'
-    if dir_has(project, '.new.dat'):
-        print("\033[33m [Dat]файлы\033[0m\n")
-        for dat0 in os.listdir(project):
-            if dat0.endswith('.new.dat'):
-                if os.path.isfile(os.path.abspath(dat0)):
-                    filen += 1
-                    print(f"   [{filen}]- {dat0}\n")
-                    files[filen] = dat0
-                    infos[filen] = 'dat'
-    if dir_has(project, '.new.dat.1'):
-        for dat10 in os.listdir(project):
-            if dat10.endswith('.dat.1'):
-                if os.path.isfile(os.path.abspath(dat10)):
-                    filen += 1
-                    print(f"   [{filen}]- {dat10} <сегментацияDAT>\n")
-                    files[filen] = dat10
-                    infos[filen] = 'dat.1'
-    if dir_has(project, '.img'):
-        print("\033[33m [Img]образы\033[0m\n")
-        for img0 in os.listdir(project):
-            if img0.endswith('.img'):
-                if os.path.isfile(os.path.abspath(img0)):
-                    filen += 1
-                    info = gettype(os.path.abspath(img0))
-                    ywarn(f"   [{filen}]- {img0} <UNKNOWN>\n") if info == "unknow" else print(
-                        f'   [{filen}]- {img0} <{info.upper()}>\n')
-                    files[filen] = img0
-                    infos[filen] = 'img' if info != 'sparse' else 'sparse'
-    if dir_has(project, '.bin'):
-        for bin0 in os.listdir(project):
-            if bin0.endswith('.bin'):
-                if os.path.isfile(os.path.abspath(bin0)) and gettype(os.path.abspath(bin0)) == 'payload':
-                    filen += 1
-                    print(f"   [{filen}]- {bin0} <BIN>\n")
-                    files[filen] = bin0
-                    infos[filen] = 'payload'
-    if dir_has(project, '.ozip'):
-        print("\033[33m [Ozip]файлы\033[0m\n")
-        for ozip0 in os.listdir(project):
-            if ozip0.endswith('.ozip'):
-                if os.path.isfile(os.path.abspath(ozip0)) and gettype(os.path.abspath(ozip0)) == 'ozip':
-                    filen += 1
-                    print(f"   [{filen}]- {ozip0}\n")
-                    files[filen] = ozip0
-                    infos[filen] = 'ozip'
-    if dir_has(project, '.ofp'):
-        print("\033[33m [Ofp]файлы\033[0m\n")
-        for ofp0 in os.listdir(project):
-            if ofp0.endswith('.ofp'):
-                if os.path.isfile(os.path.abspath(ofp0)):
-                    filen += 1
-                    print(f"   [{filen}]- {ofp0}\n")
-                    files[filen] = ofp0
-                    infos[filen] = 'ofp'
-    if dir_has(project, '.ops'):
-        print("\033[33m [Ops]файлы\033[0m\n")
-        for ops0 in os.listdir(project):
-            if ops0.endswith('.ops'):
-                if os.path.isfile(os.path.abspath(ops0)):
-                    filen += 1
-                    print(f'   [{filen}]- {ops0}\n')
-                    files[filen] = ops0
-                    infos[filen] = 'ops'
-    if dir_has(project, '.win'):
-        print("\033[33m [Win]образы\033[0m\n")
-        for win0 in os.listdir(project):
-            if win0.endswith('.win'):
-                if os.path.isfile(os.path.abspath(win0)):
-                    filen += 1
-                    print(f"   [{filen}]- {win0} <WIN> \n")
-                    files[filen] = win0
-                    infos[filen] = 'win'
-    if dir_has(project, '.win000'):
-        for win0000 in os.listdir(project):
-            if win0000.endswith('.win000'):
-                if os.path.isfile(os.path.abspath(win0000)):
-                    filen += 1
-                    print(f"   [{filen}]- {win0000} <сегментацияWIN> \n")
-                    files[filen] = win0000
-                    infos[filen] = 'win000'
-    if dir_has(project, '.dtb'):
-        print("\033[33m [Dtb]образ\033[0m\n")
-        for dtb0 in os.listdir(project):
-            if dtb0.endswith('.dtb'):
-                if os.path.isfile(os.path.abspath(dtb0)) and gettype(os.path.abspath(dtb0)) == 'dtb':
-                    filen += 1
-                    print(f'   [{filen}]- {dtb0}\n')
-                    files[filen] = dtb0
-                    infos[filen] = 'dtb'
-    print("\n\033[33m  [00] Вернуться назад [77] Автоматическая распаковка всех разделов (с запросами для каждого раздела)  \033[0m")
-    print("  --------------------------------------")
-    filed = input("  Пожалуйста, введите число：")
-    if filed == '0':
-        for v in files.keys():
-            unpack(files[v], infos[v], project)
-    elif filed == '77':
-        imgcheck = 0
-        upacall = input("  Распаковать все файлы？ [1/0]")
-        for v in files.keys():
-            if upacall != '1':
-                imgcheck = input(f"  Распаковать {files[v]}?[1/0]")
-            if upacall == "1" or imgcheck != "0":
-                unpack(files[v], infos[v], project)
-    elif filed == '00':
-        return
-    elif filed.isdigit():
-        unpack(files[int(filed)], infos[int(filed)], project) if int(filed) in files.keys() else ywarn("Ошибка ввода!")
-    else:
-        ywarn("Ошибка ввода!")
-    input("Нажмите любую клавишу для продолжения")
-    unpack_choo(project)
-
-
-def packChoo(project):
-    cls()
-    print(" \033[31m >Сборка \033[0m\n")
-    partn = 0
-    parts = {}
-    types = {}
-    json_ = json_edit(project + os.sep + "config" + os.sep + 'parts_info').read()
-    if not os.path.exists(project + os.sep + "config"):
-        os.makedirs(project + os.sep + "config")
-    if project:
-        print("   [0]- Собрать указанные ниже разделы в автоматическом режиме (без лишних запросов)\n")
-        for packs in os.listdir(project):
-            if os.path.isdir(project + os.sep + packs):
-                if os.path.exists(project + os.sep + "config" + os.sep + packs + "_fs_config"):
-                    partn += 1
-                    parts[partn] = packs
-                    if packs in json_.keys():
-                        typeo = json_[packs]
-                    else:
-                        typeo = 'ext'
-                    types[partn] = typeo
-                    print(f"   [{partn}]- {packs} <{typeo}>\n")
-                elif os.path.exists(project + os.sep + packs + os.sep + "comp"):
-                    partn += 1
-                    parts[partn] = packs
-                    types[partn] = 'bootimg'
-                    print(f"   [{partn}]- {packs} <bootimg>\n")
-                elif os.path.exists(project + os.sep + "config" + os.sep + "dtbinfo_" + packs):
-                    partn += 1
-                    parts[partn] = packs
-                    types[partn] = 'dtb'
-                    print(f"   [{partn}]- {packs} <dtb>\n")
-                elif os.path.exists(project + os.sep + "config" + os.sep + "dtboinfo_" + packs):
-                    partn += 1
-                    parts[partn] = packs
-                    types[partn] = 'dtbo'
-                    print(f"   [{partn}]- {packs} <dtbo>\n")
-        print("\n\033[33m [55] Автоматическая сборка всех разделов (с запросами для каждого раздела) [66] Собрать Super [77] Собрать Payload [00]Вернуться назад\033[0m")
-        print("  --------------------------------------")
-        filed = input("  Пожалуйста, введите число：")
-        if filed == '0':
-            op_menu = input("  Выходной формат образа: [1]br [2]dat [3]img:")
-            if op_menu == '1':
-                form = 'br'
-            elif op_menu == '2':
-                form = 'dat'
-            else:
-                form = 'img'
-            if settings.diyimgtype == '1':
-                imgtype = input("Собрать разделы в：[1]ext4 [2]erofs [3]f2fs:")
-                if imgtype == '1':
-                    imgtype = 'ext'
-                elif imgtype == '2':
-                    imgtype = "erofs"
-                else:
-                    imgtype = 'f2fs'
-            else:
-                imgtype = 'ext'
-            for f in track(parts.keys()):
-                yecho(f"Сборка {parts[f]}...")
-                if types[f] == 'bootimg':
-                    dboot(project + os.sep + parts[f], project + os.sep + parts[f] + ".img")
-                elif types[f] == 'dtb':
-                    makedtb(parts[f], project)
-                elif types[f] == 'dtbo':
-                    makedtbo(parts[f], project)
-                else:
-                    inpacker(parts[f], project, form, imgtype)
-        elif filed == '55':
-            op_menu = input("  Выходной формат образа: [1]br [2]dat [3]img:")
-            if op_menu == '1':
-                form = 'br'
-            elif op_menu == '2':
-                form = 'dat'
-            else:
-                form = 'img'
-            if settings.diyimgtype == '1':
-                imgtype = input("Собрать разделы в：[1]ext4 [2]erofs [3]f2fs:")
-                if imgtype == '1':
-                    imgtype = 'ext'
-                elif imgtype == '2':
-                    imgtype = "erofs"
-                else:
-                    imgtype = 'f2fs'
-            else:
-                imgtype = 'ext'
-            for f in parts.keys():
-                imgcheck = input(f"  Собрать{parts[f]}?[1/0]	") if input(
-                    "  Собрать все образы?？ [1/0]	") != '1' else '1'
-                if not imgcheck == '1':
-                    continue
-                yecho(f"Сборка {parts[f]}...")
-                if types[f] == 'bootimg':
-                    dboot(project + os.sep + parts[f], project + os.sep + parts[f] + ".img")
-                elif types[f] == 'dtb':
-                    makedtb(parts[f], project)
-                elif types[f] == 'dtbo':
-                    makedtbo(parts[f], project)
-                else:
-                    inpacker(parts[f], project, form, imgtype, json_)
-        elif filed == '66':
-            packsuper(project)
-        elif filed == '77':
-            packpayload(project)
-        elif filed == '00':
-            return
-        elif filed.isdigit():
-            if int(filed) in parts.keys():
-                if settings.diyimgtype == '1' and types[int(filed)] not in ['bootimg', 'dtb', 'dtbo']:
-                    imgtype = input("Собрать разделы в：[1]ext4 [2]erofs [3]f2fs:")
-                    if imgtype == '1':
-                        imgtype = 'ext'
-                    elif imgtype == '2':
-                        imgtype = "erofs"
-                    else:
-                        imgtype = 'f2fs'
-                else:
-                    imgtype = 'ext'
-                if settings.diyimgtype == '1' and types[int(filed)] not in ['bootimg', 'dtb', 'dtbo']:
-                    op_menu = input("  Выходной формат образов: [1]br [2]dat [3]img:")
-                    if op_menu == '1':
-                        form = 'br'
-                    elif op_menu == '2':
-                        form = "dat"
-                    else:
-                        form = 'img'
-                else:
-                    form = 'img'
-                yecho(f"Сборка {parts[int(filed)]}")
-                if types[int(filed)] == 'bootimg':
-                    dboot(project + os.sep + parts[int(filed)], project + os.sep + parts[int(filed)] + ".img")
-                elif types[int(filed)] == 'dtb':
-                    makedtb(parts[int(filed)], project)
-                elif types[int(filed)] == 'dtbo':
-                    makedtbo(parts[int(filed)], project)
-                else:
-                    inpacker(parts[int(filed)], project, form, imgtype, json_)
-            else:
-                ywarn("Ошибка ввода!")
-        else:
-            ywarn("Ошибка ввода!")
-        input("Нажмите любую клавишу для продолжения")
-        packChoo(project)
-
-
-def dboot(infile, orig):
-    flag = ''
-    if not os.path.exists(infile):
-        print(f"Не удается найти {infile}...")
-        return
-    if os.path.isdir(infile + os.sep + "ramdisk"):
-        try:
-            os.chdir(infile + os.sep + "ramdisk")
-        except Exception as e:
-            print("Ramdisk не найден... %s" % e)
-            return
-        cpio = utils.findfile("cpio.exe" if os.name != 'posix' else 'cpio',
-                              ebinner).replace(
-            '\\', "/")
-        call(exe="busybox ash -c \"find | sed 1d | %s -H newc -R 0:0 -o -F ../ramdisk-new.cpio\"" % cpio, sp=1,
-             shstate=True)
-        os.chdir(infile)
-        with open("comp", "r", encoding='utf-8') as compf:
-            comp = compf.read()
-        print("Compressing:%s" % comp)
-        if comp != "unknow":
-            if call("magiskboot compress=%s ramdisk-new.cpio" % comp) != 0:
-                print("Ошибка сборки Ramdisk...")
-                os.remove("ramdisk-new.cpio")
-                return
-            else:
-                print("Сборка Ramdisk завершена успешно...")
-                try:
-                    os.remove("ramdisk.cpio")
-                except (Exception, BaseException):
-                    ...
-                os.rename("ramdisk-new.cpio.%s" % comp.split('_')[0], "ramdisk.cpio")
-        else:
-            print("Сборка Ramdisk завершена успешно...")
-            os.remove("ramdisk.cpio")
-            os.rename("ramdisk-new.cpio", "ramdisk.cpio")
-        if comp == "cpio":
-            flag = "-n"
-    else:
-        os.chdir(infile)
-    if call("magiskboot repack %s %s" % (flag, orig)) != 0:
-        print("Сборка boot завершилась неудачей...")
-        return
-    else:
-        os.remove(orig)
-        os.rename(infile + os.sep + "new-boot.img", orig)
-        os.chdir(LOCALDIR)
-        try:
-            rmdire(infile)
-        except (Exception, BaseException):
-            print("Ошибка удаления...")
-        print("Сборка успешно завершена...")
-
-
-def unpackboot(file, project):
-    name = os.path.basename(file).replace('.img', '')
-    rmdire(project + os.sep + name)
-    os.makedirs(project + os.sep + name)
-    os.chdir(project + os.sep + name)
-    if call("magiskboot unpack -h %s" % file) != 0:
-        print("Распаковка %s не удалась..." % file)
-        os.chdir(LOCALDIR)
-        shutil.rmtree(project + os.sep + name)
-        return
-    if os.access(project + os.sep + name + os.sep + "ramdisk.cpio", os.F_OK):
-        comp = gettype(project + os.sep + name + os.sep + "ramdisk.cpio")
-        print(f"Ramdisk это {comp}")
-        with open(project + os.sep + name + os.sep + "comp", "w") as f:
-            f.write(comp)
-        if comp != "unknow":
-            os.rename(project + os.sep + name + os.sep + "ramdisk.cpio",
-                      project + os.sep + name + os.sep + "ramdisk.cpio.comp")
-            if call("magiskboot decompress %s %s" % (
-                    project + os.sep + name + os.sep + "ramdisk.cpio.comp",
-                    project + os.sep + name + os.sep + "ramdisk.cpio")) != 0:
-                print("Ошибка распаковки Ramdisk...")
-                return
-        if not os.path.exists(project + os.sep + name + os.sep + "ramdisk"):
-            os.mkdir(project + os.sep + name + os.sep + "ramdisk")
-        os.chdir(project + os.sep + name + os.sep)
-        print("Распаковка Ramdisk...")
-        call('cpio -i -d -F ramdisk.cpio -D ramdisk')
-        os.chdir(LOCALDIR)
-    else:
-        print("Распаковка завершена!")
-    os.chdir(LOCALDIR)
-
-
-def undtb(project, infile):
-    dtbdir = project + os.sep + os.path.basename(infile).split(".")[0]
-    rmdire(dtbdir)
-    if not os.path.exists(dtbdir):
-        os.makedirs(dtbdir)
-    extract_dtb.extract_dtb.split(Namespace(filename=infile, output_dir=dtbdir + os.sep + "dtb_files", extract=1))
-    yecho("Распаковка dtb...")
-    for i in track(os.listdir(dtbdir + os.sep + "dtb_files")):
-        if i.endswith('.dtb'):
-            name = i.split('.')[0]
-            dtb = os.path.join(dtbdir, 'dtb_files', name + ".dtb")
-            dts = os.path.join(dtbdir, 'dtb_files', name + ".dts")
-            call(
-                f'dtc -@ -I dtb -O dts {dtb} -o {dts}',
-                out=1)
-    open(project + os.sep + os.sep + "config" + os.sep + "dtbinfo_" + os.path.basename(infile).split(".")[0],
-         'w').close()
-    ysuc("Распаковка завершена!")
-    time.sleep(1)
-
-
-def makedtb(sf, project):
-    dtbdir = project + os.sep + sf
-    rmdire(dtbdir + os.sep + "new_dtb_files")
-    os.makedirs(dtbdir + os.sep + "new_dtb_files")
-    for dts_files in os.listdir(dtbdir + os.sep + "dtb_files"):
-        new_dtb_files = dts_files.split('.')[0]
-        yecho(f"Сборка {dts_files}для{new_dtb_files}.dtb")
-        dtb_ = dtbdir + os.sep + "dtb_files" + os.sep + dts_files
-        if call(f'dtc -@ -I "dts" -O "dtb" "{dtb_}" -o "{dtbdir + os.sep}new_dtb_files{os.sep}{new_dtb_files}.dtb"',
-                out=1) != 0:
-            ywarn("Не удалось собрать dtb")
-    with open(project + os.sep + "TI_out" + os.sep + sf, 'wb') as sff:
-        for dtb in os.listdir(dtbdir + os.sep + "new_dtb_files"):
-            if dtb.endswith('.dtb'):
-                with open(os.path.abspath(dtb), 'rb') as f:
-                    sff.write(f.read())
-    ysuc("Сборка успешно завершена！")
-
-
-def undtbo(project, infile):
-    dtbodir = project + os.sep + os.path.basename(infile).split('.')[0]
-    open(project + os.sep + "config" + os.sep + "dtboinfo_" + os.path.basename(infile).split('.')[0], 'w').close()
-    rmdire(dtbodir)
-    if not os.path.exists(dtbodir + os.sep + "dtbo_files"):
-        os.makedirs(dtbodir + os.sep + "dtbo_files")
-        try:
-            os.makedirs(dtbodir + os.sep + "dts_files")
-        except (Exception, BaseException):
-            ...
-    yecho("Распаковка dtbo.img")
-    mkdtboimg.dump_dtbo(infile, dtbodir + os.sep + "dtbo_files" + os.sep + "dtbo")
-    for dtbo_files in os.listdir(dtbodir + os.sep + "dtbo_files"):
-        if dtbo_files.startswith('dtbo.'):
-            dts_files = dtbo_files.replace("dtbo", 'dts')
-            yecho(f"Распаковка {dtbo_files} для {dts_files}")
-            dtbofiles = dtbodir + os.sep + "dtbo_files" + os.sep + dtbo_files
-            if call(f'dtc -@ -I "dtb" -O "dts" {dtbofiles} -o "{dtbodir + os.sep + "dts_files" + os.sep + dts_files}"',
-                    out=1) != 0:
-                ywarn(f"Распаковка {dtbo_files} завершилась неудачей！")
-    ysuc("Завершено！")
-    time.sleep(1)
-
-
-def makedtbo(sf, project):
-    dtbodir = project + os.sep + os.path.basename(sf).split('.')[0]
-    rmdire(dtbodir + os.sep + 'new_dtbo_files')
-    if os.path.exists(project + os.sep + os.path.basename(sf).split('.')[0] + '.img'):
-        os.remove(project + os.sep + os.path.basename(sf).split('.')[0] + '.img')
-    os.makedirs(dtbodir + os.sep + 'new_dtbo_files')
-    for dts_files in os.listdir(dtbodir + os.sep + 'dts_files'):
-        new_dtbo_files = dts_files.replace('dts', 'dtbo')
-        yecho(f"Сборка {dts_files} для {new_dtbo_files}")
-        dtb_ = dtbodir + os.sep + "dts_files" + os.sep + dts_files
-        call(
-            f'dtc -@ -I "dts" -O "dtb" {dtb_} -o {dtbodir + os.sep + "new_dtbo_files" + os.sep + new_dtbo_files}',
-            out=1)
-    yecho("Сборка dtbo.img...")
-    list_ = []
-    for b in os.listdir(dtbodir + os.sep + "new_dtbo_files"):
-        if b.startswith('dtbo.'):
-            list_.append(dtbodir + os.sep + "new_dtbo_files" + os.sep + b)
-    list_ = sorted(list_, key=lambda x: int(float(x.rsplit('.', 1)[1])))
-    try:
-        mkdtboimg.create_dtbo(project + os.sep + os.path.basename(sf).split('.')[0] + '.img', list_, 4096)
-    except (Exception, BaseException):
-        ywarn(f"{os.path.basename(sf).split('.')[0]}.img собрать не удалось!")
-    else:
-        ysuc(f"{os.path.basename(sf).split('.')[0]}.img успешно собран!")
-
-
-def inpacker(name, project, form, ftype, json_=None):
-    if json_ is None:
-        json_ = {}
-
-    def rdi(name_):
-        try:
-            dir_path = os.path.join(project, "TI_out")
-            os.remove(dir_path + os.sep + name_ + ".new.dat")
-            os.remove(dir_path + os.sep + name_ + ".patch.dat")
-            os.remove(dir_path + os.sep + name_ + ".transfer.list")
-        except (Exception, BaseException):
-            ...
-
-    file_contexts = project + os.sep + "config" + os.sep + name + "_file_contexts"
-    fs_config = project + os.sep + "config" + os.sep + name + "_fs_config"
-    utc = int(time.time()) if not settings.utcstamp else settings.utcstamp
-    out_img = project + os.sep + "TI_out" + os.sep + name + ".img"
-    in_files = project + os.sep + name + os.sep
-    img_size0 = int(cat(project + os.sep + "config" + os.sep + name + "_size.txt")) if os.path.exists(
-        project + os.sep + "config" + os.sep + name + "_size.txt") else 0
-    img_size1 = dirsize(in_files, 1, 1).rsize_v
-    if settings.diysize == '' and img_size0 < img_size1:
-        ywarn("Если вы установите слишком маленький размер, размер будет регулироваться динамически!")
-        img_size0 = dirsize(in_files, 1, 3, project + os.sep + "dynamic_partitions_op_list").rsize_v
-    elif settings.diysize == '':
-        img_size0 = dirsize(in_files, 1, 3, project + os.sep + "dynamic_partitions_op_list").rsize_v
-    fspatch.main(in_files, fs_config)
-    if settings.context == 'true' and os.path.exists(file_contexts):
-        contextpatch.main(in_files, file_contexts)
-    if os.path.exists(file_contexts):
-        utils.qc(file_contexts)
-    utils.qc(fs_config)
-    size = img_size0 / int(settings.BLOCKSIZE)
-    size = int(size)
-    if ftype == 'erofs':
-        other_ = '-E legacy-compress' if settings.erofs_old_kernel == '1' else ''
-        call(
-            f'mkfs.erofs {other_} -z{settings.erofslim}  -T {utc} --mount-point=/{name} --fs-config-file={fs_config} --product-out={os.path.dirname(out_img)} --file-contexts={file_contexts} {out_img} {in_files}')
-    elif ftype == 'f2fs':
-        size_f2fs = (54 * 1024 * 1024) + img_size1
-        size_f2fs = int(size_f2fs*1.15)+1
-        with open(out_img, 'wb') as f:
-            f.truncate(size_f2fs)
-        call(f'mkfs.f2fs {out_img} -O extra_attr -O inode_checksum -O sb_checksum -O compression -f')
-        call(f'sload.f2fs -f {in_files} -C {fs_config} -s {file_contexts} -t /{name} {out_img} -c')
-    else:
-        if os.path.exists(file_contexts):
-            if settings.pack_e2 == '0':
-                call(
-                    f'make_ext4fs -J -T {utc} -S {file_contexts} -l {img_size0} -C {fs_config} -L {name} -a {name} {out_img} {in_files}')
-            else:
-                call(
-                    f'mke2fs -O ^has_journal -L {name} -I 256 -M /{name} -m 0 -t ext4 -b {settings.BLOCKSIZE} {out_img} {size}')
-                call(
-                    f"e2fsdroid -e -T {utc} -S {file_contexts} -C {fs_config} -a /{name} -f {in_files} {out_img}")
-        else:
-            call(
-                f'make_ext4fs -J -T {utc} -l {img_size0} -C {fs_config} -L {name} -a {name} {out_img} {in_files}')
-    if settings.pack_sparse == '1' or form in ['dat', 'br']:
-        call(f"img2simg {out_img} {out_img}.s")
-        os.remove(out_img)
-        os.rename(out_img + ".s", out_img)
-    if form in ['br', 'dat']:
-        rdi(name)
-    if form in ['dat', 'br']:
-        yecho(f"Собрать [DAT]:{name}")
-        rdi(name)
-        try:
-            os.remove(project + os.sep + "TI_out" + os.sep + name + ".patch.dat")
-        except (Exception, BaseException):
-            ...
-        utils.img2sdat(out_img, project + os.sep + "TI_out", int(json_.get('dat_ver', '4')), name)
-        try:
-            os.remove(out_img)
-        except (Exception, BaseException):
-            ...
-    if form == 'br':
-        yecho(f"Собрать[BR]:{name}")
-        call(
-            f'brotli -q {settings.brcom} -j -w 24 {project + os.sep + "TI_out" + os.sep + name + ".new.dat"} -o {project + os.sep + "TI_out" + os.sep + name + ".new.dat.br"}')
-
-
-def versize(size):
-    size_ = size
-    diff_size = size_
-    for i_ in range(20):
-        if not i_:
-            continue
-        i_ = i_ - 0.5
-        t = 1024 * 1024 * 1024 * i_ - size_
-        if t < 0:
-            continue
-        if t < diff_size:
-            diff_size = t
-        else:
-            return int(i_ * 1024 * 1024 * 1024)
-
-
-def packsuper(project):
-    if os.path.exists(project + os.sep + "TI_out" + os.sep + "super.img"):
-        os.remove(project + os.sep + "TI_out" + os.sep + "super.img")
-    if not os.path.exists(project + os.sep + "super"):
-        os.makedirs(project + os.sep + "super")
-    cls()
-    ywarn(f"Пожалуйста, разместите образы разделов, которые необходимо собрать в super образ, в указанный каталог: {project}{os.sep}")
-    supertype = input("Пожалуйста, введите число：[1]A_only [2]AB [3]V-AB-->")
-    if supertype == '3':
-        supertype = 'VAB'
-    elif supertype == '2':
-        supertype = 'AB'
-    else:
-        supertype = 'A_only'
-    isreadonly = input("Собрать образ с правами только для чтения？[1/0]")
-    ifsparse = input("Собрать sparse образ？[1/0]")
-    if not os.listdir(project + os.sep + 'super'):
-        print("Похоже, у вас нет разделов для упаковки. Хотите переместить и упаковать следующие разделы?：")
-        move_list = []
-        for i in os.listdir(project + os.sep + 'TI_out'):
-            if os.path.isfile(os.path.join(project + os.sep + 'TI_out', i)):
-                if gettype(os.path.join(project + os.sep + 'TI_out', i)) in ['ext', 'erofs']:
-                    if i.startswith('dsp'):
-                        continue
-                    move_list.append(i)
-        print("\n".join(move_list))
-        if input('Вы уверены?[Y/N]') in ['Y', 'y', '1']:
-            for i in move_list:
-                shutil.move(os.path.join(project + os.sep + 'TI_out', i), os.path.join(project + os.sep + 'super', i))
-    tool_auto_size = sum(
-        [os.path.getsize(os.path.join(project + os.sep + 'super', p)) for p in os.listdir(project + os.sep + 'super') if
-         os.path.isfile(os.path.join(project + os.sep + 'super', p))]) + 409600
-    tool_auto_size = versize(tool_auto_size)
-    checkssize = input(
-        f"Пожалуйста, установите размер Super.img:[1]9126805504 [2]10200547328 [3]16106127360 [4]Автоматический размер：{tool_auto_size} [5]Настроить")
-    if checkssize == '1':
-        supersize = 9126805504
-    elif checkssize == '2':
-        supersize = 10200547328
-    elif checkssize == '3':
-        supersize = 16106127360
-    elif checkssize == '4':
-        supersize = tool_auto_size
-    else:
-        supersize = input("Пожалуйста, введите размер раздела (количество байт) super образа:")
-    yecho("Собрать в TI_out/super.img...")
-    insuper(project + os.sep + 'super', project + os.sep + 'TI_out' + os.sep + "super.img", supersize, supertype,
-            ifsparse, isreadonly)
-
-
-def insuper(Imgdir, outputimg, ssize, stype, sparsev, isreadonly):
-    attr = "readonly" if isreadonly == '1' else "none"
-    group_size_a = 0
-    group_size_b = 0
-    for root, dirs, files in os.walk(Imgdir):
-        for file in files:
-            file_path = os.path.join(root, file)
-            if os.path.isfile(file_path) and os.path.getsize(file_path) == 0:
-                os.remove(file_path)
-    superpa = f"--metadata-size {settings.metadatasize} --super-name {settings.supername} "
-    if sparsev == '1':
-        superpa += "--sparse "
-    if stype == 'VAB':
-        superpa += "--virtual-ab "
-    superpa += f"-block-size={settings.SBLOCKSIZE} "
-    for imag in os.listdir(Imgdir):
-        if imag.endswith('.img'):
-            image = imag.replace("_a.img", "").replace("_b.img", "").replace(".img", "")
-            if f'partition {image}:{attr}' not in superpa and f'partition {image}_a:{attr}' not in superpa:
-                if stype in ['VAB', 'AB']:
-                    if os.path.isfile(Imgdir + os.sep + image + "_a.img") and os.path.isfile(
-                            Imgdir + os.sep + image + "_b.img"):
-                        img_sizea = os.path.getsize(Imgdir + os.sep + image + "_a.img")
-                        img_sizeb = os.path.getsize(Imgdir + os.sep + image + "_b.img")
-                        group_size_a += img_sizea
-                        group_size_b += img_sizeb
-                        superpa += f"--partition {image}_a:{attr}:{img_sizea}:{settings.super_group}_a --image {image}_a={Imgdir}{os.sep}{image}_a.img --partition {image}_b:{attr}:{img_sizeb}:{settings.super_group}_b --image {image}_b={Imgdir}{os.sep}{image}_b.img "
-                    else:
-                        if not os.path.exists(Imgdir + os.sep + image + ".img") and os.path.exists(
-                                Imgdir + os.sep + image + "_a.img"):
-                            os.rename(Imgdir + os.sep + image + "_a.img", Imgdir + os.sep + image + ".img")
-
-                        img_size = os.path.getsize(Imgdir + os.sep + image + ".img")
-                        group_size_a += img_size
-                        group_size_b += img_size
-                        superpa += f"--partition {image}_a:{attr}:{img_size}:{settings.super_group}_a --image {image}_a={Imgdir}{os.sep}{image}.img --partition {image}_b:{attr}:0:{settings.super_group}_b "
-                else:
-                    if not os.path.exists(Imgdir + os.sep + image + ".img") and os.path.exists(
-                            Imgdir + os.sep + image + "_a.img"):
-                        os.rename(Imgdir + os.sep + image + "_a.img", Imgdir + os.sep + image + ".img")
-
-                    img_size = os.path.getsize(Imgdir + os.sep + image + ".img")
-                    superpa += f"--partition {image}:{attr}:{img_size}:{settings.super_group} --image {image}={Imgdir}{os.sep}{image}.img "
-                    group_size_a += img_size
-                print(f"Добавлен раздел:{image}")
-    supersize = ssize
-    if not supersize:
-        supersize = group_size_a + 4096000
-    superpa += f"--device super:{supersize} "
-    if stype in ['VAB', 'AB']:
-        superpa += "--metadata-slots 3 "
-        superpa += f" --group {settings.super_group}_a:{supersize} "
-        superpa += f" --group {settings.super_group}_b:{supersize} "
-    else:
-        superpa += "--metadata-slots 2 "
-        superpa += f" --group {settings.super_group}:{supersize} "
-    superpa += f"{settings.fullsuper} {settings.autoslotsuffixing} --output {outputimg}"
-    ywarn("Не удалось создать super.img！") if call(f'lpmake {superpa}') != 0 else ysuc("super.img успешно создан!")
-
-
-def packpayload(project):
-    if ostype != 'Linux':
-        print(f"Текущая система не поддерживается:{ostype},В настоящее время поддерживается только:Linux(aarch64&x86)")
-        input("Нажмите любую клавишу для продолжения")
-        return
-    if os.path.exists(project + os.sep + 'payload'):
-        if input('Обнаружен собранный Payload, удалить его?[1/0]') == '1':
-            re_folder(project + os.sep + 'payload')
-            re_folder(project + os.sep + 'TI_out' + os.sep + "payload")
-            f_remove(project + os.sep + 'TI_out' + os.sep + "payload" + os.sep + 'dynamic_partitions_info.txt')
-    else:
-        os.makedirs(project + os.sep + 'payload')
-    ywarn(f"Пожалуйста, поместите все образы разделов в{project + os.sep}payload！")
-    yecho("Эта функция требует очень много , ресурсов процессора, памяти и мало что значит без официальной подписи, поэтому, пожалуйста, рассмотрите возможность ее использования позже")
-    if not os.listdir(project + os.sep + 'payload'):
-        print("Похоже, у вас нет разделов, которые вы хотите собрать. Хотите выбрать следующие разделы?：")
-        move_list = []
-        for i in os.listdir(project + os.sep + 'TI_out'):
-            if os.path.isfile(os.path.join(project + os.sep + 'TI_out', i)):
-                if i.endswith('.img'):
-                    move_list.append(i)
-        print("\n".join(move_list))
-        if input('Вы уверены?[Y/N]') in ['Y', 'y', '1']:
-            for i in move_list:
-                shutil.move(os.path.join(project + os.sep + 'TI_out', i), os.path.join(project + os.sep + 'payload', i))
-    tool_auto_size = sum(
-        [os.path.getsize(os.path.join(project + os.sep + 'payload', p)) for p in
-         os.listdir(project + os.sep + 'payload') if
-         os.path.isfile(os.path.join(project + os.sep + 'payload', p))]) + 409600
-    tool_auto_size = versize(tool_auto_size)
-    checkssize = input(f"Пожалуйста, установите размер Super.img:[1]9126805504 [2]10200547328 [3]Автоматический размер：{tool_auto_size} [5]Настроить")
-    if checkssize == '1':
-        supersize = 9126805504
-    elif checkssize == '2':
-        supersize = 10200547328
-    elif checkssize == '3':
-        supersize = tool_auto_size
-    else:
-        supersize = input("Пожалуйста, введите размер раздела (количество байт)super образа： ")
-    yecho(f"Собрать в {project}/TI_out/payload...")
-    inpayload(supersize, project)
-
-
-def inpayload(supersize, project):
-    yecho("Будет собран в：TI_out/payload，payload.bin & payload_properties.txt")
-    partname = []
-    super_list = []
-    pimages = []
-    out = project + os.sep + 'TI_out' + os.sep + 'payload' + os.sep + 'payload.bin'
-    for sf in os.listdir(project + os.sep + 'payload'):
-        if sf.endswith('.img'):
-            partname.append(sf.replace('.img', ''))
-            if gettype(project + os.sep + 'payload' + os.sep + sf) in ['ext', 'erofs']:
-                super_list.append(sf.replace('.img', ''))
-            pimages.append(f"{project}{os.sep}payload{os.sep}{sf}")
-            yecho(f"Предварительная собрка:{sf}")
-    inparts = f"--partition_names={':'.join(partname)} --new_partitions={':'.join(pimages)}"
-    yecho(f"Список разделов Super образа：{super_list}")
-    with open(project + os.sep + "payload" + os.sep + "parts_info.txt", 'w', encoding='utf-8',
-              newline='\n') as txt:
-        txt.write(f"super_partition_groups={settings.super_group}\n")
-        txt.write(f"qti_dynamic_partitions_size={supersize}\n")
-        txt.write(f"qti_dynamic_partitions_partition_list={' '.join(super_list)}\n")
-    os.system(
-        f"{ebinner}delta_generator --out_file={out} {inparts} --dynamic_partition_info_file={os.path.join(project, 'payload', 'parts_info.txt')}")
-    if not os.path.exists(out):
-        input("Ошибка, образ не создан")
-    else:
-        LOGS("payload успешно создан!") if call(
-            f"delta_generator --in_file={out} --properties_file={project + os.sep + 'config' + os.sep}payload_properties.txt") == 0 else LOGE(
-            "Не удалось создать payload！")
-
-
-def unpack(file, info, project):
-    if not os.path.exists(file):
-        file = os.path.join(project, file)
-    json_ = json_edit(os.path.join(project, 'config', 'parts_info'))
-    parts = json_.read()
-    if not os.path.exists(project + os.sep + 'config'):
-        os.makedirs(project + os.sep + 'config')
-    yecho(f"[{info}]Распаковка {os.path.basename(file)}...")
-    if info == 'sparse':
-        simg2img(os.path.join(project, file))
-        unpack(file, gettype(file), project)
-    elif info == 'dtbo':
-        undtbo(project, os.path.abspath(file))
-    elif info == 'br':
-        call(f'brotli -dj {file}')
-        partname = str(os.path.basename(file).replace('.new.dat.br', ''))
-        filepath = str(os.path.dirname(file))
-        unpack(os.path.join(filepath, partname + ".new.dat"), 'dat', project)
-    elif info == 'dtb':
-        undtb(project, os.path.abspath(file))
-    elif info == 'dat':
-        partname = str(os.path.basename(file).replace('.new.dat', ''))
-        filepath = str(os.path.dirname(file))
-        version = utils.sdat2img(os.path.join(filepath, partname + '.transfer.list'),
-                                 os.path.join(filepath, partname + ".new.dat"),
-                                 os.path.join(filepath, partname + ".img")).version
-        parts['dat_ver'] = version
-        try:
-            os.remove(os.path.join(filepath, partname + ".new.dat"))
-            os.remove(os.path.join(filepath, partname + '.transfer.list'))
-            os.remove(os.path.join(filepath, partname + '.patch.dat'))
-        except (Exception, BaseException):
-            ...
-        unpack(os.path.join(filepath, partname + ".img"), gettype(os.path.join(filepath, partname + ".img")), project)
-    elif info == 'img':
-        parts[os.path.basename(file).split('.')[0]] = gettype(file)
-        unpack(file, gettype(file), project)
-    elif info == 'ofp':
-        ofpm = input(" Какой процессор в прошивке？[1]Qualcomm [2]MTK	")
-        if ofpm == '1':
-            ofp_qc_decrypt.main(file, project)
-        elif ofpm == '2':
-            ofp_mtk_decrypt.main(file, project)
-    elif info == 'ozip':
-        ozipdecrypt.main(file)
-        try:
-            os.remove(file)
-        except Exception as e:
-            print(f"Ошибка！{e}")
-        zipfile.ZipFile(file.replace('.ozip', '.zip')).extractall(project)
-    elif info == 'ops':
-        args = {"decrypt": True,
-                '<filename>': file,
-                'outdir': os.path.join(project, os.path.dirname(file).split('.')[0])}
-        opscrypto.main(args)
-    elif info == 'payload':
-        yecho(f"{os.path.basename(file)}Список разделов：")
-        with open(file, 'rb') as pay:
-            print(f'{(parts_ := [i.partition_name for i in utils.payload_reader(pay).partitions])}')
-        extp = input("Пожалуйста, введите названия разделов, которые нужно распаковать (через пробелы)/all[все]	")
-        if extp == 'all':
-            Dumper(
-                file,
-                project,
-                diff=False,
-                old='old',
-                images=parts_
-            ).run()
-        else:
-            Dumper(
-                file,
-                project,
-                diff=False,
-                old='old',
-                images=[p for p in extp.split()]
-            ).run()
-    elif info == 'win000':
-        for fd in [f for f in os.listdir(project) if re.search(r'\.win\d+', f)]:
-            with open(project + os.path.basename(fd).rsplit('.', 1)[0], 'ab') as ofd:
-                for fd1 in sorted(
-                        [f for f in os.listdir(project) if f.startswith(os.path.basename(fd).rsplit('.', 1)[0] + ".")],
-                        key=lambda x: int(x.rsplit('.')[3])):
-                    print("Объединить%sв%s" % (fd1, os.path.basename(fd).rsplit('.', 1)[0]))
-                    with open(project + os.sep + fd1, 'rb') as nfd:
-                        ofd.write(nfd.read())
-                    os.remove(project + os.sep + fd1)
-        filepath = os.path.dirname(file)
-        unpack(os.path.join(filepath, file), gettype(os.path.join(filepath, file)), project)
-    elif info == 'win':
-        filepath = os.path.dirname(file)
-        unpack(os.path.join(filepath, file), gettype(os.path.join(filepath, file)), project)
-    elif info == 'ext':
-        with open(file, 'rb+') as e:
-            mount = ext4.Volume(e).get_mount_point
-            if mount[:1] == '/':
-                mount = mount[1:]
-            if '/' in mount:
-                mount = mount.split('/')
-                mount = mount[len(mount) - 1]
-            if mount and os.path.basename(file).split('.')[0] != 'mi_ext':
-                parts[mount] = 'ext'
-        with Console().status(f"[yellow]Распаковка {os.path.basename(file)}[/]"):
-            imgextractor.Extractor().main(file, project + os.sep + os.path.basename(file).split('.')[0], project)
-        try:
-            os.remove(file)
-        except (Exception, BaseException):
-            ...
-    elif info == 'dat.1':
-        for fd in [f for f in os.listdir(project) if re.search(r'\.new\.dat\.\d+', f)]:
-            with open(project + os.sep + os.path.basename(fd).rsplit('.', 1)[0], 'ab') as ofd:
-                for fd1 in sorted(
-                        [f for f in os.listdir(project) if f.startswith(os.path.basename(fd).rsplit('.', 1)[0] + ".")],
-                        key=lambda x: int(x.rsplit('.')[3])):
-                    print("Объединить%sв%s" % (fd1, os.path.basename(fd).rsplit('.', 1)[0]))
-                    with open(project + os.sep + fd1, 'rb') as nfd:
-                        ofd.write(nfd.read())
-                    os.remove(project + os.sep + fd1)
-        partname = str(os.path.basename(file).replace('.new.dat.1', ''))
-        filepath = str(os.path.dirname(file))
-        utils.sdat2img(os.path.join(filepath, partname + '.transfer.list'),
-                       os.path.join(filepath, partname + ".new.dat"), os.path.join(filepath, partname + ".img"))
-        unpack(os.path.join(filepath, partname + ".img"), gettype(os.path.join(filepath, partname + ".img")), project)
-    elif info == 'erofs':
-        call(f'extract.erofs -i {os.path.abspath(file)} -o {project} -x')
-    elif info == 'f2fs' and os.name == 'posix':
-        call(f'extract.f2fs -o {project} {os.path.abspath(file)}')
-    elif info == 'super':
-        lpunpack.unpack(os.path.abspath(file), project)
-        for v in os.listdir(project):
-            if os.path.isfile(project + os.sep + v):
-                if os.path.getsize(project + os.sep + v) == 0:
-                    os.remove(project + os.sep + v)
-                else:
-                    if os.path.exists(project + os.sep + v.replace('_a', '')) or os.path.exists(
-                            project + os.sep + v.replace('_b', '')):
-                        continue
-                    if v.endswith('_a.img'):
-                        shutil.move(project + os.sep + v, project + os.sep + v.replace('_a', ''))
-                    elif v.endswith('_b.img'):
-                        shutil.move(project + os.sep + v, project + os.sep + v.replace('_b', ''))
-    elif info in ['boot', 'vendor_boot']:
-        unpackboot(os.path.abspath(file), project)
-    else:
-        ywarn("Неизвестный формат！")
-    json_.write(parts)
-
-
-def autounpack(project):
-    yecho("Начнется автоматическая распаковка！")
-    os.chdir(project)
-    if os.path.exists(project + os.sep + "payload.bin"):
-        yecho('Распаковка payload.bin...')
-        unpack(project + os.sep + 'payload.bin', 'payload', project)
-        yecho("Распаковка успешно завершена！")
-        wastes = ['care_map.pb', 'apex_info.pb']
-        if input("Удалить payload?[1/0]") == '1':
-            wastes.append('payload.bin')
-        for waste in wastes:
-            if os.path.exists(project + os.sep + waste):
-                try:
-                    os.remove(project + os.sep + waste)
-                except (Exception, BaseException):
-                    ...
-        if not os.path.isdir(project + os.sep + "config"):
-            os.makedirs(project + os.sep + "config")
-        shutil.move(project + os.sep + "payload_properties.txt", project + os.sep + "config")
-        shutil.move(project + os.sep + "META-INF" + os.sep + "com" + os.sep + "android" + os.sep + "metadata",
-                    project + os.sep + "config")
-    ask_ = input("Распаковать все образы？[1/0]")
-    for infile in os.listdir(project):
-        os.chdir(project)
-        if os.path.isdir(os.path.abspath(infile)):
-            continue
-        elif not os.path.exists(os.path.abspath(infile)):
-            continue
-        elif os.path.getsize(os.path.abspath(infile)) == 0:
-            continue
-        elif os.path.abspath(infile).endswith('.list') or os.path.abspath(infile).endswith('.patch.dat'):
-            continue
-        if ask_ != '1':
-            if not input(f"Распаковать {infile}? [1/0]") == '1':
-                continue
-        if infile.endswith('.new.dat.br'):
-            unpack(os.path.abspath(infile), 'br', project)
-        elif infile.endswith('.dat.1'):
-            unpack(os.path.abspath(infile), 'dat.1', project)
-        elif infile.endswith('.new.dat'):
-            unpack(os.path.abspath(infile), 'dat', project)
-        elif infile.endswith('.img'):
-            unpack(os.path.abspath(infile), 'img', project)
-
 
 if __name__ == '__main__':
     Tool().main()
