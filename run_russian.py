@@ -495,7 +495,7 @@ class Tool:
         for pros in os.listdir(LOCALDIR):
             if pros == 'bin' or pros.startswith('.'):
                 continue
-            if os.path.isdir(o_path.join(LOCALDIR, pros)):
+            if os.path.isdir(os.path.join(LOCALDIR, pros)):
                 pro += 1
                 print(f"   [{pro}]  {pros}\n")
                 projects[str(pro)] = pros
@@ -518,17 +518,17 @@ class Tool:
             for op in op_pro:
                 if op in projects.keys():
                     if input(f"  Удалить{projects[op]}？[1/0]") == '1':
-                        rmdire(o_path.join(LOCALDIR, projects[op]))
+                        rmdire(os.path.join(LOCALDIR, projects[op]))
                     else:
                         ywarn("Восстановить")
         elif op_pro == '0':
             projec = input("Пожалуйста, введите название проекта(не на китайском языке)：")
             if projec:
-                if os.path.exists(o_path.join(LOCALDIR, projec)):
+                if os.path.exists(os.path.join(LOCALDIR, projec)):
                     projec = f'{projec}_{time.strftime("%m%d%H%M%S")}'
                     ywarn(f"Проект уже существует！Называется：{projec}")
                     time.sleep(1)
-                os.makedirs(o_path.join(LOCALDIR, projec, "config"))
+                os.makedirs(os.path.join(LOCALDIR, projec, "config"))
                 self.pro = projec
                 self.project()
             else:
