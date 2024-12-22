@@ -30,6 +30,7 @@ import utils
 from api import cls, dir_has, cat, dirsize, re_folder, f_remove
 from log import LOGS, LOGE, ysuc, yecho, ywarn
 
+# Определение необходимых путей
 LOCALDIR = os.getcwd()
 binner = os.path.join(LOCALDIR, "bin")
 setfile = os.path.join(binner, "settings.json")
@@ -43,6 +44,7 @@ if os.getenv('PREFIX'):
 ebinner = os.path.join(binner, ostype, platform) + os.sep
 temp = os.path.join(binner, 'temp')
 
+# Класс для работы с JSON-файлами
 class json_edit:
     def __init__(self, j_f):
         self.file = j_f
@@ -53,7 +55,7 @@ class json_edit:
         with open(self.file, 'r+', encoding='utf-8') as pf:
             try:
                 return json.loads(pf.read())
-            except (Exception, BaseException):
+            except json.JSONDecodeError:
                 return {}
 
     def write(self, data):
@@ -65,16 +67,9 @@ class json_edit:
         data[name] = value
         self.write(data)
 
+# Функция для удаления директории
 def rmdire(path):
     if os.path.exists(path):
-        if os.name == 'nt':
-            for r, d, f in os.walk(path):
-                for i in d:
-                    if i.endswith('.'):
-                        call('mv {} {}'.format(os.path.join(r, i), os.path.join(r, i[:1])))
-                for i in f:
-                    if i.endswith('.'):
-                        call('mv {} {}'.format(os.path.join(r, i), os.path.join(r, i[:1])))
         try:
             shutil.rmtree(path)
         except PermissionError:
@@ -82,12 +77,13 @@ def rmdire(path):
         else:
             ysuc("Удалено успешно!")
 
+# Обработка ошибок
 def error(exception_type, exception, traceback):
     cls()
     table = Table()
     try:
-        version = settings.version
-    except:
+        version = settings.version  # Убедитесь, что settings определены
+    except NameError:
         version = 'Неизвестна'
     table.add_column(f'[red]Ошибка:{exception_type.__name__}[/]', justify="center")
     table.add_row(f'[yellow]Описание:{exception}')
@@ -103,32 +99,18 @@ def error(exception_type, exception, traceback):
     input()
     sys.exit(1)
 
+# Функция для вычисления SHA1
 def sha1(file_path):
     if os.path.exists(file_path):
         with open(file_path, 'rb') as f:
             return hashlib.sha1(f.read()).hexdigest()
-    else:
-        return ''
+    return ''
 
+# Проверка наличия необходимых файлов
 if not os.path.exists(ebinner):
     raise Exception("Двоичный файл не найден\nВозможно, ваше устройство не поддерживается")
 
-try:
-    if os.path.basename(sys.argv[0]) == f'run_new{str() if os.name == "posix" else ".exe"}':
-        os.remove(os.path.join(LOCALDIR, f'run{str() if os.name == "posix" else ".exe"}'))
-        shutil.copyfile(os.path.join(LOCALDIR, f'run_new{str() if os.name == "posix" else ".exe"}'),
-                        os.path.join(LOCALDIR, f'run{str() if os.name == "posix" else ".exe"}'))
-    elif os.path.basename(sys.argv[0]) == f'run{str() if os.name == "posix" else ".exe"}':
-        new = os.path.join(LOCALDIR, f'run_new{str() if os.name == "posix" else ".exe"}')
-        if os.path.exists(new):
-            if sha1(os.path.join(LOCALDIR, f'run{str() if os.name == "posix" else ".exe"}')) == sha1(new):
-                os.remove(new)
-            else:
-                subprocess.Popen([new])
-                sys.exit()
-except (Exception, BaseException):
-    ...
-
+# Определение класса для настройки
 class set_utils:
     def __init__(self, path):
         self.path = path
@@ -146,9 +128,11 @@ class set_utils:
             json.dump(data, ss, ensure_ascii=False, indent=4)
         self.load_set()
 
+# Инициализация настроек
 settings = set_utils(setfile)
 settings.load_set()
 
+# Класс для обновлений
 class upgrade:
     update_json = 'https://mirror.ghproxy.com/https://raw.githubusercontent.com/ColdWindScholar/Upgrade/main/TIK.json'
 
@@ -159,7 +143,7 @@ class upgrade:
         with Console().status(f"[blue]Тестирование новой версии...[/]"):
             try:
                 data = requests.get(self.update_json).json()
-            except (Exception, BaseException):
+            except requests.RequestException:
                 data = None
         if not data:
             input("Не удалось подключиться к серверу, нажмите любую кнопку для возврата")
@@ -172,17 +156,17 @@ class upgrade:
                 input("Обратите внимание, что сборки в группе release всегда являются последнеми. Эта функция используется только для обнаружения последних, более стабильных версий.")
                 try:
                     link = data['link'][plat.system()][plat.machine()]
-                except (Exception, BaseException):
-                    input("Обновление не найдено, пожалуйста, перейдите по ссылкеhttps://github.com/ColdWindScholar/TIK下载源代码自行更新")
+                except (KeyError, IndexError):
+                    input("Обновление не найдено, пожалуйста, перейдите по ссылке https://github.com/ColdWindScholar/TIK下载源代码自行更新")
                     return
                 if not link:
-                    input("Обновление не найдено, пожалуйста, перейдите по ссылкеhttps://github.com/ColdWindScholar/TIK下载源代码自行更新")
+                    input("Обновление не найдено, пожалуйста, перейдите по ссылке https://github.com/ColdWindScholar/TIK下载源代码自行更新")
                     return
                 if input("\033[0;33;40mОбновить?[1/0]\033[0m") == '1':
                     print("Загрузка новой версии...")
                     try:
                         downloader.download([link], temp)
-                    except (BaseError, Exception):
+                    except Exception:
                         input("Ошибка загрузки, пожалуйста, повторите попытку позже")
                         return
                     print("Обновление, пожалуйста, не закрывайте программу...")
@@ -192,7 +176,7 @@ class upgrade:
                         rmdire(extract_path)
                     try:
                         zipfile.ZipFile(upgrade_pkg).extractall(extract_path)
-                    except (Exception, BaseException):
+                    except zipfile.BadZipFile:
                         input("Файл обновления поврежден и не может быть обновлен")
                         return
                     self.settings = json_edit(setfile).read()
@@ -227,7 +211,7 @@ class Unpacker:
             self.unpack_image(file, project)
         elif info == 'dat':
             self.unpack_dat(file, project)
-        # Добавьте остальные типы распаковки здесь...
+        # Добавьте дополнительные форматы для распаковки
 
     @staticmethod
     def unpack_image(file, project):
@@ -243,7 +227,6 @@ class Unpacker:
 def unpack_choo(project):
     cls()
     os.chdir(project)
-    print(" \033[31m >Распаковка \033[0m\n")
     filen = 0
     files = {}
     infos = {}
@@ -262,6 +245,7 @@ def unpack_choo(project):
         '.dtb': 'dtb'
     }
     
+    # Обработка всех поддерживаемых форматов
     for ext, info in supported_formats.items():
         for file in os.listdir(project):
             if file.endswith(ext):
@@ -378,7 +362,7 @@ class Tool:
             input("Нажмите любую клавишу для продолжения")
         self.project()
 
-# Обновленное меню настроек
+# Меню настроек
 def settings_menu():
     cls()
     print('''\033[33m  > Настройки \033[0m
@@ -1912,11 +1896,11 @@ def autounpack(project):
 
 
 if __name__ == '__main__':
-    sys.excepthook = error
+    sys.excepthook = error  # Назначаем обработчик исключений
     if os.name == 'nt':
         import ctypes
         ctypes.windll.kernel32.SetConsoleTitleW("TIK5_Alpha")
     else:
         sys.stdout.write("\x1b]2;TIK5_Alpha\x07")
         sys.stdout.flush()
-    Tool().main()
+    Tool().main()  # Запуск основной логики программы
