@@ -244,7 +244,7 @@ def unpack_choo(project):
         '.win': 'win',
         '.dtb': 'dtb'
     }
-    
+
     # Обработка всех поддерживаемых форматов
     for ext, info in supported_formats.items():
         for file in os.listdir(project):
