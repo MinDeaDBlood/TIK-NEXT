@@ -82,8 +82,8 @@ def error(exception_type, exception, traceback):
     cls()
     table = Table()
     try:
-        version = settings.version  # Убедитесь, что settings определены
-    except NameError:
+        version = settings.version  # Попытка получения версии
+    except NameError:  # Если settings не определен
         version = 'Неизвестна'
     table.add_column(f'[red]Ошибка:{exception_type.__name__}[/]', justify="center")
     table.add_row(f'[yellow]Описание:{exception}')
@@ -129,7 +129,7 @@ class set_utils:
         self.load_set()
 
 # Инициализация настроек
-settings = set_utils(setfile)
+settings = set_utils(setfile)  # Здесь определяем settings
 settings.load_set()
 
 # Класс для обновлений
@@ -192,7 +192,7 @@ class upgrade:
                     shutil.copytree(os.path.join(LOCALDIR, 'bin2'), os.path.join(LOCALDIR, 'bin'))
                     shutil.rmtree(os.path.join(LOCALDIR, 'bin2'))
                     json_edit(setfile).write(json2)
-                    input("После завершения обновления нажатие любой кнопку перезагрузит программу...")
+                    input("После завершения обновления нажатие любой кнопки перезагрузит программу...")
                     subprocess.Popen([os.path.join(LOCALDIR, f'run_new{str() if os.name == "posix" else ".exe"}')])
                     sys.exit()
             else:
@@ -211,7 +211,6 @@ class Unpacker:
             self.unpack_image(file, project)
         elif info == 'dat':
             self.unpack_dat(file, project)
-        # Добавьте дополнительные форматы для распаковки
 
     @staticmethod
     def unpack_image(file, project):
@@ -244,7 +243,7 @@ def unpack_choo(project):
         '.win': 'win',
         '.dtb': 'dtb'
     }
-
+    
     # Обработка всех поддерживаемых форматов
     for ext, info in supported_formats.items():
         for file in os.listdir(project):
