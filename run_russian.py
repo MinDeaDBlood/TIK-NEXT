@@ -82,9 +82,9 @@ def error(exception_type, exception, traceback):
     cls()
     table = Table()
     try:
-        version = settings.version  # Попытка получения версии
-    except NameError:  # Если settings не определен
-        version = 'Неизвестна'
+        version = settings.version  # Убедитесь, что используем settings
+    except NameError:
+        version = 'Неизвестна'  # Обработчик если settings не был инициализирован
     table.add_column(f'[red]Ошибка:{exception_type.__name__}[/]', justify="center")
     table.add_row(f'[yellow]Описание:{exception}')
     table.add_row(
@@ -129,7 +129,7 @@ class set_utils:
         self.load_set()
 
 # Инициализация настроек
-settings = set_utils(setfile)  # Здесь определяем settings
+settings = set_utils(setfile)  # Убедитесь, что переменная инициализирована
 settings.load_set()
 
 # Класс для обновлений
