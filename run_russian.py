@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+#!/usr/bin/env python
 import hashlib
 import json
 import platform as plat
@@ -16,16 +17,7 @@ import banner
 import ext4
 from Magisk import Magisk_patch
 import os
-
 from dumper import Dumper
-
-if os.name == 'nt':
-    import ctypes
-
-    ctypes.windll.kernel32.SetConsoleTitleW("TIK5_Alpha")
-else:
-    sys.stdout.write("\x1b]2;TIK5_Alpha\x07")
-    sys.stdout.flush()
 import extract_dtb
 import requests
 from rich.progress import track
@@ -66,11 +58,12 @@ class json_edit:
     def read(self):
         if not os.path.exists(self.file):
             return {}
-        with open(self.file, 'r+', encoding='utf-8') as pf:
-            try:
-                return json.loads(pf.read())
-            except (Exception, BaseException):
-                return {}
+        try:
+            with open(self.file, 'r+', encoding='utf-8') as pf:
+                return json.load(pf)
+        except (json.JSONDecodeError, Exception) as e:
+            ywarn(f"Ошибка чтения JSON файла: {e}")
+            return {}
 
     def write(self, data):
         with open(self.file, 'w+', encoding='utf-8') as pf:
@@ -83,59 +76,44 @@ class json_edit:
 
 
 def rmdire(path):
+    """Удаляет директорию и все ее содержимое."""
     if o_path.exists(path):
-        if os.name == 'nt':
-            for r, d, f in os.walk(path):
-                for i in d:
-                    if i.endswith('.'):
-                        call('mv {} {}'.format(os.path.join(r, i), os.path.join(r, i[:1])))
-                for i in f:
-                    if i.endswith('.'):
-                        call('mv {} {}'.format(os.path.join(r, i), os.path.join(r, i[:1])))
-
         try:
             shutil.rmtree(path)
+            ysuc("Удалено успешно!")
         except PermissionError:
             ywarn("Не удается удалить папку, недостаточно разрешений")
-        else:
-            ysuc("Удалено успешно!")
+        except Exception as e:
+            ywarn(f"Ошибка при удалении: {e}")
 
 
 def error(exception_type, exception, traceback):
+    """Обработка ошибок."""
     cls()
     table = Table()
-    try:
-        version = settings.version
-    except:
-        version = 'Неизвестна'
+    version = getattr(settings, 'version', 'Неизвестна')
     table.add_column(f'[red]Ошибка:{exception_type.__name__}[/]', justify="center")
     table.add_row(f'[yellow]Описание:{exception}')
-    table.add_row(
-        f'[yellow]Строки:{exception.__traceback__.tb_lineno}\tМодуль:{exception.__traceback__.tb_frame.f_globals["__name__"]}')
-    table.add_section()
-    table.add_row(
-        f'[blue]Платформа:[purple]{plat.machine()}\t[blue]Система:[purple]{plat.uname().system} {plat.uname().release}')
+    table.add_row(f'[yellow]Строки:{exception.__traceback__.tb_lineno}\tМодуль:{exception.__traceback__.tb_frame.f_globals["__name__"]}')
+    table.add_row(f'[blue]Платформа:[purple]{plat.machine()}\t[blue]Система:[purple]{plat.uname().system} {plat.uname().release}')
     table.add_row(f'[blue]Питон:[purple]{sys.version[:6]}\t[blue]Версия программы:[purple]{version}')
-    table.add_section()
     table.add_row(f'[green]Отчет об ошибках:https://github.com/ColdWindScholar/TIK/issues')
     Console().print(table)
     input()
     sys.exit(1)
 
 
-# sys.excepthook = error
-
-
 def sha1(file_path):
+    """Вычисляет SHA1 хэш файла."""
     if os.path.exists(file_path):
         with open(file_path, 'rb') as f:
             return hashlib.sha1(f.read()).hexdigest()
-    else:
-        return ''
+    return ''
 
 
 if not os.path.exists(ebinner):
     raise Exception("Двоичный файл не найден\nВозможно, ваше устройство не поддерживается")
+
 try:
     if os.path.basename(sys.argv[0]) == f'run_new{str() if os.name == "posix" else ".exe"}':
         os.remove(os.path.join(LOCALDIR, f'run{str() if os.name == "posix" else ".exe"}'))
@@ -143,15 +121,13 @@ try:
                         os.path.join(LOCALDIR, f'run{str() if os.name == "posix" else ".exe"}'))
     elif os.path.basename(sys.argv[0]) == f'run{str() if os.name == "posix" else ".exe"}':
         new = os.path.join(LOCALDIR, f'run_new{str() if os.name == "posix" else ".exe"}')
-        if os.path.exists(new):
-            if sha1(os.path.join(LOCALDIR, f'run{str() if os.name == "posix" else ".exe"}')) == sha1(new):
-                os.remove(new)
-            else:
-                subprocess.Popen([new])
-                sys.exit()
-except (Exception, BaseException):
-    ...
-
+        if os.path.exists(new) and sha1(os.path.join(LOCALDIR, f'run{str() if os.name == "posix" else ".exe"}')) == sha1(new):
+            os.remove(new)
+        else:
+            subprocess.Popen([new])
+            sys.exit()
+except Exception as e:
+    ywarn(f"Ошибка при обновлении: {e}")
 
 class set_utils:
     def __init__(self, path):
@@ -185,117 +161,79 @@ class upgrade:
         with Console().status(f"[blue]Тестирование новой версии...[/]"):
             try:
                 data = requests.get(self.update_json).json()
-            except (Exception, BaseException):
+            except (requests.RequestException, json.JSONDecodeError):
                 data = None
-        if not data:
-            input("Не удалось подключиться к серверу, нажмите любую кнопку для возврата")
-            return
-        else:
+        
+        if data:
             if data.get('version', settings.version) != settings.version:
                 print(f'\033[31m {banner.banner1} \033[0m')
-                print(
-                    f"\033[0;32;40mНовая версия：\033[0m\033[0;36;40m{settings.version} --> {data.get('version')}\033[0m")
-                print(f"\033[0;32;40mИзменения：\n\033[0m\033[0;36;40m{data.get('log', '1.Исправление некоторых ошибок')}\033[0m")
-                input("Обратите внимание, что сборки в группе release всегда являются последнеми. Эта функция используется только для обнаружения последних, более стабильных версий.")
-                try:
-                    link = data['link'][plat.system()][plat.machine()]
-                except (Exception, BaseException):
-                    input("Обновление не найдено, пожалуйста, перейдите по ссылкеhttps://github.com/ColdWindScholar/TIK下载源代码自行更新")
-                    return
-                if not link:
-                    input("Обновление не найдено, пожалуйста, перейдите по ссылкеhttps://github.com/ColdWindScholar/TIK下载源代码自行更新")
-                    return
-                if input("\033[0;33;40mОбновить?[1/0]\033[0m") == '1':
-                    print("Загрузка новой версии...")
-                    try:
-                        downloader.download([link], temp)
-                    except (BaseException, Exception):
-                        input("Ошибка загрузки, пожалуйста, повторите попытку позже")
-                        return
-                    print("Обновление, пожалуйста, не закрывайте программу...")
-                    upgrade_pkg = os.path.join(temp, os.path.basename(link))
-                    extract_path = os.path.join(temp, 'update')
-                    if os.path.exists(extract_path):
-                        rmdire(extract_path)
-                    try:
-                        zipfile.ZipFile(upgrade_pkg).extractall(extract_path)
-                    except (Exception, BaseException):
-                        input("Файл обновления поврежден и не может быть обновлен")
-                        return
-                    self.settings = json_edit(setfile).read()
-                    json2 = json_edit(os.path.join(extract_path, 'bin', 'settings.json')).read()
-                    for i in self.settings.keys():
-                        json2[i] = self.settings.get(i, json2.get(i, ''))
-                    json2['version'] = data.get('version', settings.version)
-                    self.settings = json2
-                    shutil.copytree(os.path.join(extract_path, 'bin'), os.path.join(LOCALDIR, 'bin2'),
-                                    dirs_exist_ok=True)
-                    shutil.move(os.path.join(extract_path, f'run{str() if os.name == "posix" else ".exe"}'),
-                                os.path.join(LOCALDIR, f'run_new{str() if os.name == "posix" else ".exe"}'))
-                    shutil.rmtree(os.path.join(LOCALDIR, 'bin'))
-                    shutil.copytree(os.path.join(LOCALDIR, 'bin2'), os.path.join(LOCALDIR, 'bin'))
-                    shutil.rmtree(os.path.join(LOCALDIR, 'bin2'))
-                    json_edit(setfile).write(json2)
-                    input("После завершения обновления нажатие любой кнопку перезагрузит программу...")
-                    subprocess.Popen([os.path.join(LOCALDIR, f'run_new{str() if os.name == "posix" else ".exe"}')])
-                    sys.exit()
+                print(f"Новая версия: {settings.version} --> {data.get('version')}")
+                print(f"Изменения:\n{data.get('log', '1. Исправление некоторых ошибок')}")
+                if input("Обновить?[1/0]") == '1':
+                    self.download_and_update(data)
             else:
-                input("\033[0;32;40mВы используете последнюю версию!Нажмите любую кнопку для возврата!\033[0m")
-                return
+                input("\033[0;32;40mВы используете последнюю версию! Нажмите любую кнопку для возврата!\033[0m")
+
+    def download_and_update(self, data):
+        try:
+            link = data['link'][plat.system()][plat.machine()]
+            if link:
+                print("Загрузка новой версии...")
+                downloader.download([link], temp)
+                self.extract_and_install_update(link)
+        except Exception:
+            input("Обновление не найдено, пожалуйста, перейдите по ссылке https://github.com/ColdWindScholar/TIK для самостоятельного обновления")
+
+    def extract_and_install_update(self, link):
+        print("Обновление, пожалуйста, не закрывайте программу...")
+        upgrade_pkg = os.path.join(temp, os.path.basename(link))
+        extract_path = os.path.join(temp, 'update')
+        rmdire(extract_path)
+        
+        try:
+            zipfile.ZipFile(upgrade_pkg).extractall(extract_path)
+        except (zipfile.BadZipFile, Exception):
+            input("Файл обновления поврежден и не может быть обновлен")
+            return
+        
+        self.update_settings(extract_path)
+
+    def update_settings(self, extract_path):
+        self.settings = json_edit(setfile).read()
+        json2 = json_edit(os.path.join(extract_path, 'bin', 'settings.json')).read()
+        
+        for i in self.settings.keys():
+            json2[i] = self.settings.get(i, json2.get(i, ''))
+        
+        json2['version'] = self.version
+        shutil.copytree(os.path.join(extract_path, 'bin'), os.path.join(LOCALDIR, 'bin2'), dirs_exist_ok=True)
+        shutil.move(os.path.join(extract_path, f'run{str() if os.name == "posix" else ".exe"}'),
+                    os.path.join(LOCALDIR, f'run_new{str() if os.name == "posix" else ".exe"}'))
+        rmdire(os.path.join(LOCALDIR, 'bin'))
+        shutil.copytree(os.path.join(LOCALDIR, 'bin2'), os.path.join(LOCALDIR, 'bin'))
+        rmdire(os.path.join(LOCALDIR, 'bin2'))
+        json_edit(setfile).write(json2)
+
+        input("После завершения обновления нажатие любой кнопки перезагрузит программу...")
+        subprocess.Popen([os.path.join(LOCALDIR, f'run_new{str() if os.name == "posix" else ".exe"}')])
+        sys.exit()
 
 
 class setting:
     def settings1(self):
         actions = {
-            "1": lambda: settings.change('brcom', brcom if (brcom := input(
-                f"  Отрегулируйте уровень сжатия Бротли (числа от 1 до 9, чем выше уровень, тем больше степень сжатия, и тем больше времени это займет).):")).isdigit() and 0 < int(
-                brcom) < 10 else '1'),
-            "2": lambda: settings.change('diysize',
-                                         "1" if input("  Размер собираемого образа в Ext4[1]Динамический размер [2]Оригинальный размер:") == '2' else ''),
-            "3": lambda: settings.change('pack_e2', '0' if input(
-                "  Собрать используя: [1]make_ext4fs [2]mke2fs+e2fsdroid:") == '1' else '1'),
-            "6": lambda: settings.change('pack_sparse', '1' if input(
-                "  Собрать образ в sparse?[1/0]\n  Пожалуйста, сделайте выбор:") == '1' else "0"),
-            "7": lambda: settings.change('diyimgtype',
-                                         '1' if input(f"  Выберите тип файловой системы[1]Как в оригинале [2]Выбрать (ext4<==>erofs):") == '2' else ''),
-            "8": lambda: settings.change('erofs_old_kernel',
-                                         '1' if input(f"  Включить поддержку старых ядер в EROFS?[1/0]") == '1' else '0')
+            "1": lambda: settings.change('brcom', self.get_brotli_compression_level()),
+            "2": lambda: settings.change('diysize', self.get_dynamic_size()),
+            "3": lambda: settings.change('pack_e2', self.get_pack_e2()),
+            "6": lambda: settings.change('pack_sparse', self.get_pack_sparse()),
+            "7": lambda: settings.change('diyimgtype', self.get_diy_image_type()),
+            "8": lambda: settings.change('erofs_old_kernel', self.get_erofs_old_kernel())
         }
         cls()
-        print(f'''
-        \033[33m  > Настройки сборки \033[0m
-           1> Уровень сжатия Бротли \033[93m[{settings.brcom}]\033[0m\n
-           ----[Настройки EXT4]------
-           2> Настройка размера \033[93m[{settings.diysize}]\033[0m
-           3> Способ сборки \033[93m[{settings.pack_e2}]\033[0m\n
-           ----[Настройки EROFS]-----
-           4> Способ сжатия \033[93m[{settings.erofslim}]\033[0m\n
-           ----[Настройки IMG]-------
-           5> Временная метка UTC \033[93m[{settings.utcstamp}]\033[0m
-           6> Содание sparse образа \033[93m[{settings.pack_sparse}]\033[0m
-           7> Выбор типа файловой системы \033[93m[{settings.diyimgtype}]\033[0m
-           8> Поддержка старых ядер \033[93m[{settings.erofs_old_kernel}]\033[0m\n
-           0> Вернуться назад
-           --------------------------
-        ''')
+        print(self.settings_menu())
         op_pro = input("   Пожалуйста, сделайте выбор:")
-        if op_pro == "0":
-            return
-        elif op_pro in actions.keys():
+        if op_pro in actions:
             actions[op_pro]()
-        elif op_pro == '4':
-            if input("  Выбрать способ сжатия erofs?[1]Да [2]Нет:") == '1':
-                erofslim = input(
-                    "  Выберите способ сжатия erofs：lz4/lz4hc/lzma/и уровень сжатия от 1 до 9 (чем больше число, тем больше времени потребуется и тем меньше размер), например, lz4hc,8:")
-                settings.change("erofslim", erofslim if erofslim else 'lz4hc,8')
-            else:
-                settings.change("erofslim", 'lz4hc,8')
-        elif op_pro == '5':
-            if input("  Установка метки времени UTC для сборки[1] Автоматическая [2] Пользовательская:") == "2":
-                utcstamp = input("  Пожалуйста, введите: ")
-                settings.change('utcstamp', utcstamp if utcstamp.isdigit() else '1717840117')
-            else:
-                settings.change('utcstamp', '')
         else:
             print("Ошибка ввода!")
         self.settings1()
@@ -303,39 +241,17 @@ class setting:
     def settings2(self):
         cls()
         actions = {
-            '1': lambda: settings.change('super_group', super_group if (
-                super_group := input(f"  Пожалуйста, введите (без специальных символов):")) else "qti_dynamic_partitions"),
-            '2': lambda: settings.change('metadatasize', metadatasize if (
-                metadatasize := input("  Установите максимальный размер метаданных (по умолчанию 65536, минимум 512).:")) else '65536'),
-            '3': lambda: settings.change('BLOCKSIZE', BLOCKSIZE if (
-                BLOCKSIZE := input(f"  Размер сектора/блока раздела：{settings.BLOCKSIZE}\n  Пожалуйста, введите: ")) else "4096"),
-            '4': lambda: settings.change('BLOCKSIZE', SBLOCKSIZE if (
-                SBLOCKSIZE := input(f"  Размер сектора/блока раздела：{settings.SBLOCKSIZE}\n  Пожалуйста, введите: ")) else "4096"),
-            '5': lambda: settings.change('supername', supername if (supername := input(
-                f'  Название текущего динамического раздела (по умолчанию super)：{settings.supername}\n  Пожалуйста, введите（без специальных символов）: ')) else "super"),
-            '6': lambda: settings.change('fullsuper', '' if input("  Создать Super образ？[1/0]") != '1' else '-F'),
-            '7': lambda: settings.change('autoslotsuffixing',
-                                         '' if input("  Добавить A/B структуру разделов в образ (system_a, vbmeta_b и.т.д)？[1/0]") != '1' else '-x')
+            '1': lambda: settings.change('super_group', self.get_super_group()),
+            '2': lambda: settings.change('metadatasize', self.get_metadata_size()),
+            '3': lambda: settings.change('BLOCKSIZE', self.get_block_size()),
+            '4': lambda: settings.change('SBLOCKSIZE', self.get_sblock_size()),
+            '5': lambda: settings.change('supername', self.get_super_name()),
+            '6': lambda: settings.change('fullsuper', self.get_full_super()),
+            '7': lambda: settings.change('autoslotsuffixing', self.get_auto_slot_suffixing())
         }
-        print(f'''
-        \033[33m  > Настройки динамического раздела \033[0m
-           1> Название группы динамического раздела \033[93m[{settings.super_group}]\033[0m\n
-           ----[Настройки метаданных]--
-           2> Максимальный размер \033[93m[{settings.metadatasize}]\033[0m\n
-           ----[Настройки раздела]------
-           3> Размер сектора/блока по умолчанию \033[93m[{settings.BLOCKSIZE}]\033[0m\n
-           ----[Настройки Super образа]-----
-           4> Выбрать размер блока \033[93m[{settings.SBLOCKSIZE}]\033[0m
-           5> Изменить название Super образа \033[93m[{settings.supername}]\033[0m
-           6> Создание полного Super образа \033[93m[{settings.fullsuper}]\033[0m
-           7> Добавление A/B структуры разделов \033[93m[{settings.autoslotsuffixing}]\033[0m\n
-           0> Вернуться назад
-           --------------------------
-        ''')
+        print(self.settings_dynamic_partition_menu())
         op_pro = input("   Пожалуйста, введите число: ")
-        if op_pro == "0":
-            return
-        elif op_pro in actions.keys():
+        if op_pro in actions:
             actions[op_pro]()
         else:
             ywarn("Ошибка ввода!")
@@ -343,30 +259,18 @@ class setting:
 
     def settings3(self):
         cls()
-        print(f'''
-    \033[33m  > Настройки программы \033[0m\n
-       1> Настройка баннера на главной странице\033[93m[{settings.banner}]\033[0m\n
-       2> Включить\отключить сообщения дня \033[93m[{settings.online}]\033[0m\n
-       3> Исправить Contexts \033[93m[{settings.context}]\033[0m\n
-       4> Проверка обновлений \n
-       0> Вернуться назад\n
-       --------------------------
-            ''')
+        print(self.settings_program_menu())
         op_pro = input("   Пожалуйста, введите число: ")
-        if op_pro == "0":
-            return
-        elif op_pro == '1':
-            print(f"  Баннер на главной странице: [1]TIK5 [2]Серп и молот [3]TIK2 [4]Genshin Impact [5]DXY [6]Никакой")
-            banner_i = input("  Пожалуйста, введите число: ")
-            if banner_i.isdigit():
-                if 0 < int(banner_i) < 7:
-                    settings.change('banner', banner_i)
-        elif op_pro == '2':
-            settings.change('online', 'false' if settings.online == 'true' else 'true')
-        elif op_pro == '3':
-            settings.change('context', 'false' if settings.context == 'true' else 'true')
-        elif op_pro == '4':
-            upgrade()
+        actions = {
+            '1': self.set_banner,
+            '2': self.toggle_online,
+            '3': self.toggle_context,
+            '4': upgrade,
+        }
+        if op_pro in actions:
+            actions[op_pro]()
+        else:
+            print("Ошибка ввода!")
         self.settings3()
 
     @staticmethod
@@ -390,15 +294,7 @@ class setting:
 
     def __init__(self):
         cls()
-        print('''
-    \033[33m  > Настройки \033[0m
-       1> Настройки упаковки\n
-       2> Настройки динамического раздела\n
-       3> Настройки программы\n
-       4> О программе\n
-       0> Вернуться в главное меню
-       --------------------------
-    ''')
+        print(self.settings_initial_menu())
         op_pro = input("   Пожалуйста, введите число: ")
         if op_pro == "0":
             return
@@ -408,6 +304,154 @@ class setting:
         except AttributeError as e:
             print(f"Ошибка ввода!{e}")
             self.__init__()
+
+    @staticmethod
+    def get_brotli_compression_level() -> str:
+        """Получить уровень сжатия Brotwheel."""
+        while True:
+            brcom = input("Отрегулируйте уровень сжатия Бротли (числа от 1 до 9): ")
+            if brcom.isdigit() and 0 < int(brcom) < 10:
+                return brcom
+            print("Ошибка ввода! Попробуйте еще раз.")
+
+    @staticmethod
+    def get_dynamic_size() -> str:
+        """Выбор размера собираемого образа."""
+        return "1" if input("Размер собираемого образа: [1] Динамический [2] Оригинальный: ") == '2' else ''
+
+    @staticmethod
+    def get_pack_e2() -> str:
+        """Получить метод упаковки."""
+        return '0' if input("Собирать используя: [1]make_ext4fs [2]mke2fs+e2fsdroid: ") == '1' else '1'
+
+    @staticmethod
+    def get_pack_sparse() -> str:
+        """Получить решение по сжатию."""
+        return '1' if input("Собрать образ в sparse? [1/0]: ") == '1' else "0"
+
+    @staticmethod
+    def get_diy_image_type() -> str:
+        """Выбор типа файловой системы."""
+        return '1' if input("Выберите тип файловой системы [1] Как в оригинале [2] Выбрать (ext4<==>erofs): ") == '2' else ''
+
+    @staticmethod
+    def get_erofs_old_kernel() -> str:
+        """Поддержка старых ядер в EROFS."""
+        return '1' if input("Включить поддержку старых ядер в EROFS? [1/0]: ") == '1' else '0'
+
+    @staticmethod
+    def get_super_group() -> str:
+        """Ввод названия группы динамического раздела."""
+        while True:
+            super_group = input("Введите название группы динамического раздела (без специальных символов): ")
+            if super_group:
+                return super_group
+            print("Ошибка ввода! Попробуйте снова.")
+
+    @staticmethod
+    def get_metadata_size() -> str:
+        """Ввод максимального размера метаданных."""
+        while True:
+            metadata_size = input("Установите максимальный размер метаданных (по умолчанию 65536, минимум 512): ")
+            if metadata_size.isdigit():
+                return metadata_size
+            print("Ошибка ввода! Попробуйте снова.")
+
+    @staticmethod
+    def get_block_size() -> str:
+        """Ввод размера сектора/блока раздела."""
+        return input(f"Размер сектора/блока раздела: {settings.BLOCKSIZE}\nПожалуйста, введите: ")
+
+    @staticmethod
+    def get_sblock_size() -> str:
+        """Ввод размера сектора/блока раздела."""
+        return input(f"Размер сектора/блока раздела: {settings.SBLOCKSIZE}\nПожалуйста, введите: ")
+
+    @staticmethod
+    def get_full_super() -> str:
+        """Создавать Super образ."""
+        return '' if input("Создать Super образ? [1/0]") != '1' else '-F'
+
+    @staticmethod
+    def get_auto_slot_suffixing() -> str:
+        """Добавление A/B структуры разделов."""
+        return '' if input("Добавить A/B структуру разделов в образ? [1/0]") != '1' else '-x'
+
+    def set_banner(self):
+        """Настройка баннера на главной странице."""
+        print("Баннер на главной странице: [1] TIK5 [2] Серп и молот [3] TIK2 [4] Genshin Impact [5] DXY [6] Никакой")
+        banner_i = input("Пожалуйста, введите число: ")
+        if banner_i.isdigit() and 0 < int(banner_i) < 7:
+            settings.change('banner', banner_i)
+
+    def toggle_online(self):
+        """Включение/выключение сообщений дня."""
+        settings.change('online', 'false' if settings.online == 'true' else 'true')
+
+    def toggle_context(self):
+        """Включение/выключение исправления контекста."""
+        settings.change('context', 'false' if settings.context == 'true' else 'true')
+
+    @staticmethod
+    def settings_menu():
+        return f'''
+        \033[33m  > Настройки сборки \033[0m
+           1> Уровень сжатия Бротли \033[93m[{settings.brcom}]\033[0m\n
+           ----[Настройки EXT4]------
+           2> Настройка размера \033[93m[{settings.diysize}]\033[0m
+           3> Способ сборки \033[93m[{settings.pack_e2}]\033[0m\n
+           ----[Настройки EROFS]-----
+           4> Способ сжатия \033[93m[{settings.erofslim}]\033[0m\n
+           ----[Настройки IMG]-------
+           5> Временная метка UTC \033[93m[{settings.utcstamp}]\033[0m
+           6> Создание sparse образа \033[93m[{settings.pack_sparse}]\033[0m
+           7> Выбор типа файловой системы \033[93m[{settings.diyimgtype}]\033[0m
+           8> Поддержка старых ядер \033[93m[{settings.erofs_old_kernel}]\033[0m\n
+           0> Вернуться назад
+           --------------------------
+        '''
+
+    @staticmethod
+    def settings_dynamic_partition_menu():
+        return f'''
+        \033[33m  > Настройки динамического раздела \033[0m
+           1> Название группы динамического раздела \033[93m[{settings.super_group}]\033[0m\n
+           ----[Настройки метаданных]--
+           2> Максимальный размер \033[93m[{settings.metadatasize}]\033[0m\n
+           ----[Настройки раздела]------
+           3> Размер сектора/блока по умолчанию \033[93m[{settings.BLOCKSIZE}]\033[0m\n
+           ----[Настройки Super образа]-----
+           4> Выбрать размер блока \033[93m[{settings.SBLOCKSIZE}]\033[0m
+           5> Изменить название Super образа \033[93m[{settings.supername}]\033[0m
+           6> Создание полного Super образа \033[93m[{settings.fullsuper}]\033[0m
+           7> Добавление A/B структуры разделов \033[93m[{settings.autoslotsuffixing}]\033[0m\n
+           0> Вернуться назад
+           --------------------------
+        '''
+
+    @staticmethod
+    def settings_program_menu():
+        return f'''
+        \033[33m  > Настройки программы \033[0m\n
+           1> Настройка баннера на главной странице \033[93m[{settings.banner}]\033[0m\n
+           2> Включить/отключить сообщения дня \033[93m[{settings.online}]\033[0m\n
+           3> Исправить Contexts \033[93m[{settings.context}]\033[0m\n
+           4> Проверка обновлений \n
+           0> Вернуться назад\n
+           --------------------------
+        '''
+
+    @staticmethod
+    def settings_initial_menu():
+        return f'''
+        \033[33m  > Настройки \033[0m
+           1> Настройки упаковки\n
+           2> Настройки динамического раздела\n
+           3> Настройки программы\n
+           4> О программе\n
+           0> Вернуться в главное меню
+           --------------------------
+        '''
 
 
 def plug_parse(js_on):
@@ -421,12 +465,9 @@ def plug_parse(js_on):
     MIO-АНАЛИЗАТОР ПАКЕТОВ
     ------------------
                   """)
-            with open(jsons, 'r', encoding='UTF-8') as f:
-                try:
+            try:
+                with open(jsons, 'r', encoding='UTF-8') as f:
                     data_ = json.load(f)
-                except Exception as e:
-                    ywarn("Ошибка анализа %s" % e)
-                    return
                 plugin_title = data_['main']['info']['title']
                 print("----------" + plugin_title + "----------")
                 for group_name, group_data in data_['main'].items():
@@ -442,40 +483,50 @@ def plug_parse(js_on):
                                 ysuc("Пожалуйста, перетащите файл или введите путь, указанный ниже")
                                 self.gavs[file_var_name] = input(con['text'])
                             elif con["type"] == "radio":
-                                gavs = {}
-                                radio_var_name = con['set']
-                                options = con['opins'].split()
-                                cs = 0
-                                print("-------Выбор варианта---------")
-                                for option in options:
-                                    cs += 1
-                                    text, value = option.split('|')
-                                    self.gavs[radio_var_name] = value
-                                    print(f"[{cs}] {text}")
-                                    gavs[str(cs)] = value
-                                print("---------------------------")
-                                op_in = input("Пожалуйста, введите число:")
-                                self.gavs[radio_var_name] = gavs[op_in] if op_in in gavs.keys() else gavs["1"]
+                                self.handle_radio(con)
                             elif con["type"] == 'input':
-                                input_var_name = con['set']
-                                if 'text' in con:
-                                    print(con['text'])
-                                self.gavs[input_var_name] = input("Пожалуйста, введите число:")
+                                self.handle_input(con)
                             elif con['type'] == 'checkbutton':
-                                b_var_name = con['set']
-                                text = 'M.K.C' if 'text' not in con else con['text']
-                                self.gavs[b_var_name] = 1 if input(text + "[1/0]:") == '1' else 0
+                                self.handle_checkbutton(con)
                             else:
                                 print("Парсинг (анализ) не поддерживается:%s" % con['type'])
+
+            except Exception as e:
+                ywarn(f"Ошибка анализа {e}")
+
+        def handle_radio(self, con):
+            gavs = {}
+            radio_var_name = con['set']
+            options = con['opins'].split()
+            cs = 0
+            print("-------Выбор варианта---------")
+            for option in options:
+                cs += 1
+                text, value = option.split('|')
+                self.gavs[radio_var_name] = value
+                print(f"[{cs}] {text}")
+                gavs[str(cs)] = value
+            print("---------------------------")
+            op_in = input("Пожалуйста, введите число:")
+            self.gavs[radio_var_name] = gavs.get(op_in, gavs["1"])
+
+        def handle_input(self, con):
+            input_var_name = con['set']
+            if 'text' in con:
+                print(con['text'])
+            self.gavs[input_var_name] = input("Пожалуйста, введите: ")
+
+        def handle_checkbutton(self, con):
+            b_var_name = con['set']
+            text = 'M.K.C' if 'text' not in con else con['text']
+            self.gavs[b_var_name] = 1 if input(text + "[1/0]:") == '1' else 0
 
     data = parse(js_on)
     return data.gavs, data.value
 
 
 class Tool:
-    """
-    Бесплатная программа для работы с образами прошивок
-    """
+    """Основной класс программы."""
 
     def __init__(self):
         self.pro = None
@@ -489,20 +540,30 @@ class Tool:
         else:
             print("=" * 50)
         print("\033[93;44m Альфа версия \033[0m")
+
         if settings.online == 'true':
-            try:
-                content = json.loads(requests.get('https://v1.jinrishici.com/all.json', timeout=2).content.decode())
-                shiju = content['content']
-                fr = content['origin']
-                another = content['author']
-            except (Exception, BaseException):
-                print(f"\033[36m “Открытый исходный код — это движение вперед без вопросов”\033[0m\n")
-            else:
-                print(f"\033[36m “{shiju}”")
-                print(f"\033[36m---{another}《{fr}》\033[0m\n")
-        else:
-            print(f"\033[36m “Открытый исходный код — это движение вперед без вопросов”")
+            self.display_quote()
+        
         print(" >\033[33m Список проектов \033[0m\n")
+        self.display_projects(projects)
+
+        op_pro = input("  Пожалуйста, введите число：")
+        self.process_user_input(op_pro, projects)
+
+    def display_quote(self):
+        """Отображает цитату."""        
+        try:
+            content = json.loads(requests.get('https://v1.jinrishici.com/all.json', timeout=2).content.decode())
+            shiju = content['content']
+            fr = content['origin']
+            another = content['author']
+            print(f"\033[36m “{shiju}”")
+            print(f"\033[36m---{another}《{fr}》\033[0m\n")
+        except (requests.RequestException, json.JSONDecodeError):
+            print(f"\033[36m “Открытый исходный код — это движение вперед без вопросов”\033[0m\n")
+
+    def display_projects(self, projects):
+        """Отображает доступные проекты."""
         print("\033[31m   [00]  Удалить проект\033[0m\n\n", "  [0]  Создать новый проект\n")
         for pros in os.listdir(LOCALDIR):
             if pros == 'bin' or pros.startswith('.'):
@@ -511,9 +572,9 @@ class Tool:
                 pro += 1
                 print(f"   [{pro}]  {pros}\n")
                 projects[str(pro)] = pros
-        print("  --------------------------------------")
-        print("\033[33m  [55] Распаковать  [66] Выйти из программы  [77] Настройки  [88] Скачать прошивку\033[0m\n")
-        op_pro = input("  Пожалуйста, введите число：")
+
+    def process_user_input(self, op_pro, projects):
+        """Обрабатывает пользовательский ввод."""
         if op_pro == '55':
             self.unpackrom()
         elif op_pro == '88':
@@ -521,105 +582,73 @@ class Tool:
             if url:
                 try:
                     downloader.download([url], LOCALDIR)
-                except (Exception, BaseException):
-                    ...
+                except Exception as e:
+                    ywarn(f"Ошибка при скачивании: {e}")
                 self.unpackrom()
         elif op_pro == '00':
-            op_pro = input("  Пожалуйста, введите число проекта, который хотите удалить:")
-            op_pro = op_pro.split() if " " in op_pro else [op_pro]
-            for op in op_pro:
-                if op in projects.keys():
-                    if input(f"  Удалить{projects[op]}？[1/0]") == '1':
-                        rmdire(o_path.join(LOCALDIR, projects[op]))
-                    else:
-                        ywarn("Восстановить")
+            self.delete_project(projects)
         elif op_pro == '0':
-            projec = input("Пожалуйста, введите название проекта(не на китайском языке)：")
-            if projec:
-                if os.path.exists(o_path.join(LOCALDIR, projec)):
-                    projec = f'{projec}_{time.strftime("%m%d%H%M%S")}'
-                    ywarn(f"Проект уже существует！Называется：{projec}")
-                    time.sleep(1)
-                os.makedirs(o_path.join(LOCALDIR, projec, "config"))
-                self.pro = projec
-                self.project()
-            else:
-                ywarn("  Ошибка ввода!")
-                input("Нажмите любую клавишу для продолжения")
+            self.create_new_project()
         elif op_pro == '66':
             cls()
             ysuc("\nСпасибо за использование TI-KITCHEN5, до свидания！")
             sys.exit(0)
         elif op_pro == '77':
             setting()
-        elif op_pro.isdigit():
-            if op_pro in projects.keys():
-                self.pro = projects[op_pro]
-                self.project()
-            else:
-                ywarn("  Ошибка ввода!")
-                input("Нажмите любую клавишу для продолжения")
+        elif op_pro.isdigit() and op_pro in projects.keys():
+            self.pro = projects[op_pro]
+            self.project()
         else:
             ywarn("  Ошибка ввода!")
             input("Нажмите любую клавишу для продолжения")
+        
         self.main()
 
-    @staticmethod
-    def dis_avb(fstab):
-        print(f"Обработка: {fstab}")
-        if not os.path.exists(fstab):
-            return
-        with open(fstab, "r") as sf:
-            details = sf.read()
-        if not re.search(",avb=vbmeta_system", details):
-            # it may be "system /system erofs ro avb=vbmeta_system,..."
-            details = re.sub("avb=vbmeta_system,", "", details)
-        else:
-            details = re.sub(",avb=vbmeta_system", ",", details)
-        if not re.search(",avb", details):
-            # it may be "product /product ext4 ro avb,..."
-            details = re.sub("avb,", "", details)
-        else:
-            details = re.sub(",avb", "", details)
-        details = re.sub(",avb_keys=.*avbpubkey", "", details)
-        details = re.sub(",avb=vbmeta_vendor", "", details)
-        details = re.sub(",avb=vbmeta", "", details)
-        with open(fstab, "w") as tf:
-            tf.write(details)
+    def delete_project(self, projects):
+        """Удаляет проект."""
+        op_pro = input("  Пожалуйста, введите число проекта, который хотите удалить:")
+        op_pro = op_pro.split() if " " in op_pro else [op_pro]
+        for op in op_pro:
+            if op in projects.keys():
+                if input(f"  Удалить {projects[op]}? [1/0]") == '1':
+                    rmdire(o_path.join(LOCALDIR, projects[op]))
+                else:
+                    ywarn("Восстановить")
 
-    @staticmethod
-    def dis_data_encryption(fstab):
-        print(f"Обработка: {fstab}")
-        if not os.path.exists(fstab):
-            return
-        with open(fstab, "r") as sf:
-            details = re.sub(",fileencryption=aes-256-xts:aes-256-cts:v2+inlinecrypt_optimized+wrappedkey_v0", "",
-                             sf.read())
-        details = re.sub(",fileencryption=aes-256-xts:aes-256-cts:v2+emmc_optimized+wrappedkey_v0", ",", details)
-        details = re.sub(",fileencryption=aes-256-xts:aes-256-cts:v2", "", details)
-        details = re.sub(",metadata_encryption=aes-256-xts:wrappedkey_v0", "", details)
-        details = re.sub(",fileencryption=aes-256-xts:wrappedkey_v0", "", details)
-        details = re.sub(",metadata_encryption=aes-256-xts", "", details)
-        details = re.sub(",fileencryption=aes-256-xts", "", details)
-        details = re.sub(",fileencryption=ice", "", details)
-        details = re.sub('fileencryption', 'encryptable', details)
-        with open(fstab, "w") as tf:
-            tf.write(details)
+    def create_new_project(self):
+        """Создает новый проект."""
+        projec = input("Пожалуйста, введите название проекта(не на китайском языке)：")
+        if projec:
+            if os.path.exists(o_path.join(LOCALDIR, projec)):
+                projec = f'{projec}_{time.strftime("%m%d%H%M%S")}'
+                ywarn(f"Проект уже существует! Называется: {projec}")
+            os.makedirs(o_path.join(LOCALDIR, projec, "config"))
+            self.pro = projec
+            self.project()
+        else:
+            ywarn("Ошибка ввода!")
+            input("Нажмите любую клавишу для продолжения")
 
     def project(self):
+        """Управляет проектом."""
         project_dir = LOCALDIR + os.sep + self.pro
         cls()
         os.chdir(project_dir)
-        print(" \n\033[31m>Меню проекта \033[0m\n")
-        print(f"  Проект：{self.pro}\033[91m(незавершенный)\033[0m\n") if not os.path.exists(
-            os.path.abspath('config')) else print(
-            f"  Проект：{self.pro}\n")
+        print(f" \033[31m> Меню проекта \033[0m\n")
+        print(f"  Проект: {self.pro}\n")
+        
         if not os.path.exists(project_dir + os.sep + 'TI_out'):
             os.makedirs(project_dir + os.sep + 'TI_out')
+
         print('\033[33m    0> Вернуться в главное меню          2> Меню распаковки\033[0m\n')
         print('\033[36m    3> Меню упаковки                     4> Меню плагинов\033[0m\n')
         print('\033[32m    5> Собрать в zip архив               6> Установка магиска (рута), удаление avb, шифрования\033[0m\n')
+
         op_menu = input("    Пожалуйста, введите число: ")
+        self.handle_project_option(op_menu, project_dir)
+
+    def handle_project_option(self, op_menu, project_dir):
+        """Обрабатывает действия в меню проекта."""
         if op_menu == '0':
             os.chdir(LOCALDIR)
             return
@@ -634,44 +663,43 @@ class Tool:
         elif op_menu == '6':
             self.custom_rom()
         else:
-            ywarn('   Ошибка ввода!')
+            ywarn('Ошибка ввода!')
             input("Нажмите любую клавишу для продолжения")
+
         self.project()
 
     def custom_rom(self):
+        """Кастомизация ROM."""
         cls()
         print(" \033[31m>Функции для продвинутых пользователей \033[0m\n")
-        print(f"  Проект：{self.pro}\n")
+        print(f"  Проект: {self.pro}\n")
         print('\033[33m    0> Вернуться назад                 1> Установить магиск в образ, для получения рута\033[0m\n')
         print('\033[33m    2> Удалить avb                     3> Удалить шифрование данных\033[0m\n')
+
         op_menu = input("    Пожалуйста, введите число: ")
         if op_menu == '0':
             return
         elif op_menu == '1':
             self.magisk_patch()
         elif op_menu == '2':
-            for root, dirs, files in os.walk(LOCALDIR + os.sep + self.pro):
-                for file in files:
-                    if file.startswith("fstab."):
-                        self.dis_avb(os.path.join(root, file))
+            self.remove_avb_from_images()
         elif op_menu == '3':
-            for root, dirs, files in os.walk(LOCALDIR + os.sep + self.pro):
-                for file in files:
-                    if file.startswith("fstab."):
-                        self.dis_data_encryption(os.path.join(root, file))
+            self.remove_data_encryption_from_images()
         else:
-            ywarn('   Ошибка ввода!')
+            ywarn('Ошибка ввода!')
+
         input("Нажмите любую клавишу для продолжения")
         self.custom_rom()
 
     def magisk_patch(self):
-        cls()
+        """Патч образа с помощью Magisk."""
         cs = 0
         project = LOCALDIR + os.sep + self.pro
         os.chdir(LOCALDIR)
-        print(" \n\033[31m>Установка магиска (рута) \033[0m\n")
-        print(f"  Проект：{self.pro}\n")
-        print(f"  Пожалуйста, выберите образ, в который нужно установить магиск{project}")
+        print(" \033[31m> Установка магиска (рута) \033[0m\n")
+        print(f"  Проект: {self.pro}\n")
+        print(f"  Пожалуйста, выберите образ, в который нужно установить магиск {project}")
+        
         boots = {}
         for i in os.listdir(project):
             if os.path.isdir(os.path.join(project, i)):
@@ -680,8 +708,10 @@ class Tool:
                 cs += 1
                 boots[str(cs)] = os.path.join(project, i)
                 print(f'  [{cs}]--{i}')
+
         print("\033[33m-------------------------------\033[0m")
         print("\033[33m    [00] Назад\033[0m\n")
+
         op_menu = input("    Пожалуйста, введите число: ")
         if op_menu in boots.keys():
             mapk = input("    Пожалуйста, выберите путь для Magisk.apk:")
@@ -690,98 +720,119 @@ class Tool:
             else:
                 patch = Magisk_patch(boots[op_menu], '', MAGISAPK=mapk)
                 patch.auto_patch()
-                if os.path.exists(os.path.join(LOCALDIR, 'new-boot.img')):
-                    out = os.path.join(project, "boot_patched.img")
-                    shutil.move(os.path.join(LOCALDIR, 'new-boot.img'), out)
-                    LOGS(f"Moved to:{out}")
-                    LOGS("Установка успешно завершена")
-                else:
-                    LOGE("Установка завершилась неудачей")
+                self.handle_successful_patch(project, boots, op_menu)
         elif op_menu == '00':
             os.chdir(project)
             return
         else:
             ywarn('Ошибка ввода!')
-        input("Нажмите любую клавишу для продолжения")
-        self.magisk_patch()
+
+    def handle_successful_patch(self, project, boots, op_menu):
+        """Обрабатывает успешное завершение патча."""
+        if os.path.exists(os.path.join(LOCALDIR, 'new-boot.img')):
+            out = os.path.join(project, "boot_patched.img")
+            shutil.move(os.path.join(LOCALDIR, 'new-boot.img'), out)
+            LOGS(f"Moved to: {out}")
+            LOGS("Установка успешно завершена")
+        else:
+            LOGE("Установка завершилась неудачей")
+
+    def remove_avb_from_images(self):
+        """Удаляет AVB из образов в проекте."""
+        for root, dirs, files in os.walk(LOCALDIR + os.sep + self.pro):
+            for file in files:
+                if file.startswith("fstab."):
+                    self.dis_avb(os.path.join(root, file))
+
+    def remove_data_encryption_from_images(self):
+        """Удаляет шифрование данных из образов в проекте."""
+        for root, dirs, files in os.walk(LOCALDIR + os.sep + self.pro):
+            for file in files:
+                if file.startswith("fstab."):
+                    self.dis_data_encryption(os.path.join(root, file))
 
     def hczip(self):
+        """Упаковка прошивки."""
         cls()
         project = LOCALDIR + os.sep + self.pro
-        print(" \033[31m>Упаковка прошивки \033[0m\n")
-        print(f"  Проект：{os.path.basename(project)}\n")
+        print(" \033[31m> Упаковка прошивки \033[0m\n")
+        print(f"  Проект: {os.path.basename(project)}\n")
         print('\033[33m    1> Собрать прошивку в zip архив     2> Собрать прошивку и добавить в zip архив скрипт, чтобы прошивку можно было прошить через fastboot используя ПК и через TWRP\nOFOX \n    3> Вернуться назад\033[0m\n')
+
         chose = input("    Пожалуйста, введите число: ")
         if chose == '1':
-            print("Подготовка к упаковке...")
-            for v in ['firmware-update', 'META-INF', 'exaid.img', 'dynamic_partitions_op_list']:
-                if os.path.isdir(os.path.join(project, v)):
-                    if not os.path.isdir(os.path.join(project, 'TI_out' + os.sep + v)):
-                        shutil.copytree(os.path.join(project, v), os.path.join(project, 'TI_out' + os.sep + v))
-                elif os.path.isfile(os.path.join(project, v)):
-                    if not os.path.isfile(os.path.join(project, 'TI_out' + os.sep + v)):
-                        shutil.copy(os.path.join(project, v), os.path.join(project, 'TI_out'))
-            for root, dirs, files in os.walk(project):
-                for f in files:
-                    if f.endswith('.br') or f.endswith('.dat') or f.endswith('.list'):
-                        if not os.path.isfile(os.path.join(project, 'TI_out' + os.sep + f)) and os.access(
-                                os.path.join(project, f), os.F_OK):
-                            shutil.copy(os.path.join(project, str(f)), os.path.join(project, 'TI_out'))
+            self.prepare_for_zip()
         elif chose == '2':
             utils.dbkxyt(os.path.join(project, 'TI_out') + os.sep, input("Прошивка создается для конкретной модели и может не работать на других"),
                          binner + os.sep + 'extra_flash.zip')
         else:
             return
+
         zip_file(os.path.basename(project) + ".zip", project + os.sep + 'TI_out', project + os.sep, LOCALDIR + os.sep)
 
+    def prepare_for_zip(self):
+        """Готовит проект к упаковке в zip архив."""
+        print("Подготовка к упаковке...")
+        for v in ['firmware-update', 'META-INF', 'exaid.img', 'dynamic_partitions_op_list']:
+            if os.path.isdir(os.path.join(project, v)):
+                if not os.path.isdir(os.path.join(project, 'TI_out' + os.sep + v)):
+                    shutil.copytree(os.path.join(project, v), os.path.join(project, 'TI_out' + os.sep + v))
+            elif os.path.isfile(os.path.join(project, v)):
+                if not os.path.isfile(os.path.join(project, 'TI_out' + os.sep + v)):
+                    shutil.copy(os.path.join(project, v), os.path.join(project, 'TI_out'))
+
     def unpackrom(self):
+        """Распаковывает ROM."""
         cls()
         zipn = 0
         zips = {}
-        print(" \033[31m >Список прошивок \033[0m\n")
-        ywarn(f"   Пожалуйста, выберите zip архив с прошивкой: {LOCALDIR}！\n")
+        print(" \033[31m > Список прошивок \033[0m\n")
+        ywarn("Пожалуйста, выберите zip архив с прошивкой: {LOCALDIR}！\n")
+        
         if dir_has(LOCALDIR, '.zip'):
             for zip0 in os.listdir(LOCALDIR):
                 if zip0.endswith('.zip'):
-                    if os.path.isfile(os.path.abspath(zip0)):
-                        if os.path.getsize(os.path.abspath(zip0)):
-                            zipn += 1
-                            print(f"   [{zipn}]- {zip0}\n")
-                            zips[zipn] = zip0
+                    if os.path.isfile(os.path.abspath(zip0)) and os.path.getsize(os.path.abspath(zip0)):
+                        zipn += 1
+                        print(f"   [{zipn}]- {zip0}\n")
+                        zips[zipn] = zip0
         else:
-            ywarn("	Нет файлов прошивки！")
+            ywarn("Нет файлов прошивки！")
+
         print("--------------------------------------------------\n")
         zipd = input("Пожалуйста, введите число：")
-        if zipd.isdigit():
-            if int(zipd) in zips.keys():
-                projec = input("Пожалуйста, введите название проекта (можно оставить пустым)：")
-                project = "TI_%s" % projec if projec else "TI_%s" % os.path.basename(zips[int(zipd)]).replace('.zip',
-                                                                                                              '')
-                if os.path.exists(LOCALDIR + os.sep + project):
-                    project = project + time.strftime("%m%d%H%M%S")
-                    ywarn(f"Проект уже существует！Называется：{project}")
-                os.makedirs(LOCALDIR + os.sep + project)
-                print(f"{project} создан успешно！")
-                with Console().status("[yellow]Распаковка...[/]"):
-                    zipfile.ZipFile(os.path.abspath(zips[int(zipd)])).extractall(LOCALDIR + os.sep + project)
-                yecho("Распакованная прошивка...")
-                autounpack(LOCALDIR + os.sep + project)
-                self.pro = project
-                self.project()
-            else:
-                ywarn("Ошибка ввода")
-                input("Нажмите любую клавишу для продолжения")
+        if zipd.isdigit() and int(zipd) in zips.keys():
+            self.create_new_project_from_zip(zips[int(zipd)])
         else:
             ywarn("Ошибка ввода!")
             input("Нажмите любую клавишу для продолжения")
 
+    def create_new_project_from_zip(self, zip_file_name):
+        """Создает новый проект на основе выбранного zip файла."""
+        projec = input("Пожалуйста, введите название проекта (можно оставить пустым): ")
+        project = f"TI_{projec}" if projec else f"TI_{os.path.basename(zip_file_name).replace('.zip', '')}"
+        
+        if os.path.exists(os.path.join(LOCALDIR, project)):
+            project = f"{project}_{time.strftime('%m%d%H%M%S')}"
+            ywarn(f"Проект уже существует！Называется：{project}")
 
-def get_all_file_paths(directory) -> Ellipsis:
-    # 初始化образ路径列表
+        os.makedirs(os.path.join(LOCALDIR, project))
+        print(f"{project} создан успешно！")
+        
+        with Console().status("[yellow]Распаковка...[/]"):
+            zipfile.ZipFile(os.path.abspath(zip_file_name)).extractall(os.path.join(LOCALDIR, project))
+        
+        yecho("Распакованная прошивка...")
+        autounpack(os.path.join(LOCALDIR, project))
+
+        self.pro = project
+        self.project()
+
+def get_all_file_paths(directory):
+    """Генерирует полные пути всех файлов в заданной директории."""
     for root, directories, files in os.walk(directory):
         for filename in files:
             yield os.path.join(root, filename)
-
 
 class zip_file:
     def __init__(self, file, dst_dir, local, path=None):
@@ -790,18 +841,19 @@ class zip_file:
         os.chdir(dst_dir)
         relpath = str(path + file)
         if os.path.exists(relpath):
-            ywarn(f"Файл с таким именем уже существует：{file}，был автоматически переименован в{(relpath := path + utils.v_code() + file)}")
+            ywarn(f"Файл с таким именем уже существует: {file} , был автоматически переименован в {(relpath := path + utils.v_code() + file)}")
+        
         with zipfile.ZipFile(relpath, 'w', compression=zipfile.ZIP_DEFLATED,
                              allowZip64=True) as zip_:
-            # 遍历写入文件
             for file in get_all_file_paths('.'):
-                print(f"Запись:%s" % file)
+                print(f"Запись: {file}")
                 try:
                     zip_.write(file)
                 except Exception as e:
-                    print("Ошибка записи{}".format(file, e))
+                    print("Ошибка записи: {}".format(e))
+
         if os.path.exists(relpath):
-            print(f'Упаковка завершена:{relpath}')
+            print(f'Упаковка завершена: {relpath}')
         os.chdir(local)
 
 
