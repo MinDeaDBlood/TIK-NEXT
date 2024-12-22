@@ -16,49 +16,25 @@ import banner
 import ext4
 from Magisk import Magisk_patch
 import os
+import logging  # Импортируем модуль для логирования
 
 from dumper import Dumper
 
+# Настройка логирования
+logging.basicConfig(
+    filename='error_log.txt',  # Имя файла для логов
+    level=logging.INFO,  # Уровень логирования
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
 if os.name == 'nt':
     import ctypes
-
     ctypes.windll.kernel32.SetConsoleTitleW("TIK5_Alpha")
 else:
     sys.stdout.write("\x1b]2;TIK5_Alpha\x07")
     sys.stdout.flush()
-import extract_dtb
-import requests
-from rich.progress import track
-import contextpatch
-import downloader
-import fspatch
-import imgextractor
-import lpunpack
-import mkdtboimg
-import ofp_mtk_decrypt
-import ofp_qc_decrypt
-import ozipdecrypt
-import utils
-from api import cls, dir_has, cat, dirsize, re_folder, f_remove
-from log import LOGS, LOGE, ysuc, yecho, ywarn
-from utils import gettype, simg2img, call
-import opscrypto
-import zip2mpk
-from rich.table import Table
-from rich.console import Console
 
-LOCALDIR = os.getcwd()
-binner = o_path.join(LOCALDIR, "bin")
-setfile = o_path.join(LOCALDIR, "bin", "settings.json")
-platform = plat.machine()
-ostype = plat.system()
-if os.getenv('PREFIX'):
-    if os.getenv('PREFIX') == "/data/data/com.termux/files/usr":
-        ostype = 'Android'
-ebinner = o_path.join(binner, ostype, platform) + os.sep
-temp = o_path.join(binner, 'temp')
-
-
+# Класс для редактирования JSON-файлов
 class json_edit:
     def __init__(self, j_f):
         self.file = j_f
@@ -81,50 +57,42 @@ class json_edit:
         data[name] = value
         self.write(data)
 
-
+# Функция для удаления директорий
 def rmdire(path):
-    if o_path.exists(path):
-        if os.name == 'nt':
-            for r, d, f in os.walk(path):
-                for i in d:
-                    if i.endswith('.'):
-                        call('mv {} {}'.format(os.path.join(r, i), os.path.join(r, i[:1])))
-                for i in f:
-                    if i.endswith('.'):
-                        call('mv {} {}'.format(os.path.join(r, i), os.path.join(r, i[:1])))
-
+    if os.path.exists(path):
         try:
             shutil.rmtree(path)
         except PermissionError:
-            ywarn("Не удается удалить папку, недостаточно разрешений")
+            logging.warning("Не удается удалить папку, недостаточно разрешений")
         else:
-            ysuc("Удалено успешно!")
+            logging.info("Удалено успешно!")
 
-
+# Обработчик ошибок
 def error(exception_type, exception, traceback):
     cls()
     table = Table()
     try:
         version = settings.version
-    except:
+    except AttributeError:
         version = 'Неизвестна'
     table.add_column(f'[red]Ошибка:{exception_type.__name__}[/]', justify="center")
     table.add_row(f'[yellow]Описание:{exception}')
-    table.add_row(
-        f'[yellow]Строки:{exception.__traceback__.tb_lineno}\tМодуль:{exception.__traceback__.tb_frame.f_globals["__name__"]}')
+    table.add_row(f'[yellow]Строки:{exception.__traceback__.tb_lineno}\tМодуль:{exception.__traceback__.tb_frame.f_globals["__name__"]}')
     table.add_section()
-    table.add_row(
-        f'[blue]Платформа:[purple]{plat.machine()}\t[blue]Система:[purple]{plat.uname().system} {plat.uname().release}')
+    table.add_row(f'[blue]Платформа:[purple]{plat.machine()}\t[blue]Система:[purple]{plat.uname().system} {plat.uname().release}')
     table.add_row(f'[blue]Питон:[purple]{sys.version[:6]}\t[blue]Версия программы:[purple]{version}')
     table.add_section()
     table.add_row(f'[green]Отчет об ошибках:https://github.com/ColdWindScholar/TIK/issues')
     Console().print(table)
+    
+    # Логируем ошибку
+    logging.error(f'{exception_type.__name__}: {exception}, строка: {exception.__traceback__.tb_lineno}, модуль: {exception.__traceback__.tb_frame.f_globals["__name__"]}')
+    
     input()
     sys.exit(1)
 
-
-# sys.excepthook = error
-
+# Устанавливаем обработчик исключений на уровень всего приложения
+sys.excepthook = error
 
 def sha1(file_path):
     if os.path.exists(file_path):
@@ -1924,4 +1892,8 @@ def autounpack(project):
 
 
 if __name__ == '__main__':
-    Tool().main()
+    try:
+        Tool().main()
+    except Exception as ex:
+        logging.error(f"Критическая ошибка в программе: {str(ex)}")
+        print("Произошла ошибка. Проверьте логи для подробной информации.")
